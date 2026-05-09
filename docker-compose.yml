@@ -1,0 +1,96 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: midscale
+      POSTGRES_USER: midscale
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-midscale}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U midscale"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://midscale:${POSTGRES_PASSWORD:-midscale}@postgres:5432/midscale
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      WIREGUARD_INTERFACE: ${WIREGUARD_INTERFACE:-wg0}
+      WIREGUARD_PORT: ${WIREGUARD_PORT:-51820}
+      WIREGUARD_SERVER_ENDPOINT: ${WIREGUARD_SERVER_ENDPOINT:-localhost}
+      WIREGUARD_BINARY: ${WIREGUARD_BINARY:-wg}
+      WIREGUARD_TOPOLOGY: ${WIREGUARD_TOPOLOGY:-star}
+      WG_CONTROLLER_ENABLED: ${WG_CONTROLLER_ENABLED:-true}
+      WG_CONTROLLER_INTERVAL_SECONDS: ${WG_CONTROLLER_INTERVAL_SECONDS:-30}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      DNS_ENABLED: ${DNS_ENABLED:-false}
+      DNS_DOMAIN: ${DNS_DOMAIN:-wg.midscale}
+      DNS_ZONES_PATH: ${DNS_ZONES_PATH:-/etc/coredns/zones}
+      DNS_COREDNS_RELOAD_CMD: ${DNS_COREDNS_RELOAD_CMD:-}
+      DNS_DEFAULT_TTL: ${DNS_DEFAULT_TTL:-300}
+      DEBUG: ${DEBUG:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:5177","http://localhost:8000","http://localhost:80","http://10.10.77.229:80","http://10.10.77.229:8000"]}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - coredns_zones:/etc/coredns/zones
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; exit(0 if urllib.request.urlopen('http://localhost:8000/health/live').status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+
+  coredns:
+    image: coredns/coredns:latest
+    command: -conf /etc/coredns/Corefile
+    ports:
+      - "5353:53/udp"
+      - "5353:53/tcp"
+      - "9153:9153"
+    volumes:
+      - ./coredns/Corefile:/etc/coredns/Corefile:ro
+      - coredns_zones:/etc/coredns/zones
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  coredns_zones:
