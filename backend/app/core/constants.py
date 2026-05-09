@@ -30,6 +30,7 @@ EVENT_NETWORK_DELETED = "network.deleted"
 EVENT_CONFIG_CHANGED = "config.changed"
 EVENT_ENDPOINT_REPORTED = "endpoint.reported"
 EVENT_ENDPOINT_STALE = "endpoint.stale"
+EVENT_ENDPOINT_PROBE = "endpoint.probe"
 EVENT_ROUTE_CHANGED = "route.changed"
 EVENT_ACL_CHANGED = "acl.changed"
 

@@ -9,13 +9,21 @@ STUN (RFC 5389) is implemented in both the backend and daemon:
 - **Fallback**: If STUN is unavailable/disbled, the daemon falls back to local IP detection via UDP socket trick.
 - **Source tagging**: STUN-discovered endpoints are reported with `source="stun"` and include both `local_ip` and `public_ip`.
 
+### Current State
+Peer connectivity probing is implemented:
+- **Backend**: `endpoint_scoring.py` computes scores from reachability, latency, failures, and success count. `POST /devices/{id}/probe-result` accepts probe results, updates `DeviceEndpoint` rows with scoring fields, and triggers `config.changed` events.
+- **Daemon**: `peer_prober.py` performs lightweight UDP probes against known endpoint candidates. Reports reachability and latency to the control plane for scoring.
+- **Config-v2**: Endpoint candidates include `score`, `reachable`, `latency_ms`, and `preferred` fields. Candidates are sorted by descending score with the best marked as `preferred=True`.
+
 ### Known Limitations
 - **No NAT type classification**: The STUN implementation only discovers the mapped address. It does not classify NAT type (full-cone, restricted, port-restricted, symmetric) via RFC 3489 behavior tests.
-- **No connectivity checks**: There is no mechanism to verify that two peers can establish a direct connection before falling back to relay.
 - **No DERP relay**: Devices behind symmetric NAT or firewalls that block UDP cannot establish direct WireGuard connections. A DERP relay server (similar to Tailscale's DERP) would be needed for reliable connectivity in such environments.
 - **Single STUN server**: The daemon queries the configured STUN servers sequentially (first success wins). There's no parallel query or latency-based selection.
 - **No STUN over TCP/TLS**: Only UDP is supported, which may be blocked in restrictive networks.
 - **No port prediction**: For symmetric NAT, a series of STUN requests could be used to predict the next port mapping, but this is not implemented.
+- **No full UDP hole punching**: Peer probing measures reachability and latency but does not perform full hole punching. Symmetric NAT traversal requires DERP relay.
+- **No path quality scoring**: Scores are based on reachability, latency, and failure count only. There is no bandwidth estimation, jitter measurement, or congestion-aware path selection.
+- **No multi-path connectivity**: Each peer has one preferred endpoint. There is no multipath or failover between endpoints beyond fallback logic.
 
 ## Control Plane
 
@@ -37,6 +45,6 @@ STUN (RFC 5389) is implemented in both the backend and daemon:
 
 ## Performance & Scale
 
-- **Path quality unaware**: The control plane does not measure or score path quality between peers. It simply provides known endpoints.
+- **Path quality**: Peer probing measures reachability and latency. Jitter, bandwidth, and packet loss are not tracked.
 - **No MTU negotiation**: WireGuard MTU is hardcoded or configured manually. There is no PMTUD or automatic MTU adjustment.
 - **No bandwidth-aware routing**: All traffic for a given peer goes to the first available endpoint. There is no bandwidth estimation or congeston-aware path selection.

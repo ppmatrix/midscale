@@ -26,11 +26,13 @@ from app.schemas.device import (
     EnrollByKeyResponse,
     HeartbeatRequest,
     EndpointReport,
+    ProbeResultRequest,
+    ProbeResultResponse,
 )
 from app.services.metrics import DEVICE_ENROLLMENT
 from app.services.ipam import allocate_ip
 from app.services.wireguard import save_device_keys, get_device_config, build_config_v2
-from app.services.daemon import process_heartbeat, report_endpoint
+from app.services.daemon import process_heartbeat, report_endpoint, process_probe_result
 from app.services.audit import audit_logger
 from app.core.security import hash_password, decode_token, generate_device_token
 from app.config import settings
@@ -138,6 +140,37 @@ async def device_report_endpoint(
     )
 
     return result
+
+
+@router.post("/{device_id}/probe-result", response_model=ProbeResultResponse)
+async def device_probe_result(
+    device_id: uuid.UUID,
+    req: ProbeResultRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    current_device: Annotated[Device, Depends(get_current_device_by_id)],
+):
+    result = await process_probe_result(
+        session, device_id,
+        peer_device_id=req.peer_device_id,
+        endpoint=req.endpoint,
+        reachable=req.reachable,
+        latency_ms=req.latency_ms,
+        source=req.source,
+        port=req.port,
+        local_ip=req.local_ip,
+        public_ip=req.public_ip,
+    )
+
+    await _publish_config_change(
+        session, current_device, "endpoint.probe"
+    )
+
+    return ProbeResultResponse(
+        status="ok",
+        endpoint_id=result.get("endpoint_id"),
+        score=result.get("score", 0),
+        preferred=result.get("preferred", False),
+    )
 
 
 

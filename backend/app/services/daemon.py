@@ -36,6 +36,7 @@ Security Model:
     - Server stores encrypted private key (current model)
     - Future: ECDH-based enrollment (key never leaves device)
 """
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -169,3 +170,120 @@ async def stale_endpoint_cleanup(
         await session.flush()
         logger.info("cleaned stale endpoints", count=cleaned, cutoff=cutoff.isoformat())
     return cleaned
+
+
+async def process_probe_result(
+    session: AsyncSession,
+    device_id,
+    peer_device_id: str,
+    endpoint: str,
+    reachable: bool,
+    latency_ms: Optional[int] = None,
+    source: str = "probe",
+    port: int = 51820,
+    local_ip: Optional[str] = None,
+    public_ip: Optional[str] = None,
+) -> dict:
+    """Process a probe result from a daemon.
+
+    Updates or creates a DeviceEndpoint for the probed peer, recalculates
+    the score, and returns whether the preferred endpoint changed.
+    """
+    from app.services.endpoint_scoring import compute_endpoint_score, select_best_endpoint, sort_endpoint_candidates
+    from app.services.metrics import ENDPOINT_PROBE_TOTAL, ENDPOINT_REACHABLE, ENDPOINT_SCORE_UPDATES
+
+    now = datetime.now(timezone.utc)
+    ep_id = None
+    score = 0
+
+    result_label = "reachable" if reachable else "unreachable"
+    ENDPOINT_PROBE_TOTAL.labels(result=result_label).inc()
+
+    result = await session.execute(
+        select(DeviceEndpoint).where(
+            DeviceEndpoint.device_id == peer_device_id,
+            DeviceEndpoint.endpoint == endpoint,
+        ).order_by(DeviceEndpoint.last_seen.desc())
+    )
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        existing.reachable = reachable
+        existing.last_probe_at = now
+        existing.latency_ms = latency_ms
+        if reachable:
+            existing.success_count = (existing.success_count or 0) + 1
+        else:
+            existing.failure_count = (existing.failure_count or 0) + 1
+        existing.score = compute_endpoint_score(
+            reachable=existing.reachable,
+            latency_ms=existing.latency_ms,
+            failure_count=existing.failure_count,
+            success_count=existing.success_count,
+            priority=existing.priority,
+        )
+        existing.last_seen = now
+        ep_id = str(existing.id)
+        score = existing.score
+    else:
+        failure_count = 0 if reachable else 1
+        success_count = 1 if reachable else 0
+        score = compute_endpoint_score(
+            reachable=reachable,
+            latency_ms=latency_ms,
+            failure_count=failure_count,
+            success_count=success_count,
+        )
+        new_ep = DeviceEndpoint(
+            device_id=uuid.UUID(peer_device_id) if isinstance(peer_device_id, str) else peer_device_id,
+            endpoint=endpoint,
+            source=source,
+            port=port,
+            local_ip=local_ip,
+            public_ip=public_ip,
+            reachable=reachable,
+            latency_ms=latency_ms,
+            last_probe_at=now,
+            failure_count=failure_count,
+            success_count=success_count,
+            score=score,
+            last_seen=now,
+        )
+        session.add(new_ep)
+        await session.flush()
+        ep_id = str(new_ep.id)
+
+    await session.flush()
+
+    ENDPOINT_SCORE_UPDATES.inc()
+
+    all_eps_result = await session.execute(
+        select(DeviceEndpoint).where(
+            DeviceEndpoint.device_id == peer_device_id,
+            DeviceEndpoint.is_active,
+        )
+    )
+    all_eps = all_eps_result.scalars().all()
+    reachable_count = sum(1 for e in all_eps if e.reachable)
+    ENDPOINT_REACHABLE.set(reachable_count)
+
+    best = select_best_endpoint(all_eps) if all_eps else None
+    preferred = bool(best and str(best.id) == ep_id) if best else False
+
+    logger.info(
+        "probe result processed",
+        device_id=str(device_id),
+        peer_device_id=peer_device_id,
+        endpoint=endpoint,
+        reachable=reachable,
+        latency_ms=latency_ms,
+        score=score,
+        preferred=preferred,
+    )
+
+    return {
+        "status": "ok",
+        "endpoint_id": ep_id,
+        "score": score,
+        "preferred": preferred,
+    }

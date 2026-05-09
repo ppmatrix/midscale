@@ -82,6 +82,10 @@ class EndpointCandidate(BaseModel):
     last_seen_at: Optional[str] = None
     local_ip: Optional[str] = None
     public_ip: Optional[str] = None
+    reachable: bool = False
+    latency_ms: Optional[int] = None
+    score: int = 0
+    preferred: bool = False
 
 
 class PeerInfo(BaseModel):
@@ -138,3 +142,21 @@ class EndpointReport(BaseModel):
     port: int = 51820
     local_ip: Optional[str] = None
     public_ip: Optional[str] = None
+
+
+class ProbeResultRequest(BaseModel):
+    peer_device_id: str
+    endpoint: str
+    source: str = "probe"
+    port: int = 51820
+    reachable: bool = False
+    latency_ms: Optional[int] = None
+    local_ip: Optional[str] = None
+    public_ip: Optional[str] = None
+
+
+class ProbeResultResponse(BaseModel):
+    status: str = "ok"
+    endpoint_id: Optional[str] = None
+    score: int = 0
+    preferred: bool = False

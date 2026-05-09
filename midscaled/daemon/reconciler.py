@@ -2,7 +2,10 @@ import asyncio
 import json
 import re
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from daemon.peer_prober import PeerProber
 
 import structlog
 
@@ -145,6 +148,7 @@ class Reconciler:
         api_client: MidscaleAPIClient,
         wg_runtime: WireGuardRuntime,
         state_store: StateStore,
+        peer_prober: Optional["PeerProber"] = None,
     ):
         self._config = config
         self._api = api_client
@@ -154,6 +158,7 @@ class Reconciler:
         self._task: Optional[asyncio.Task] = None
         self._last_config: Optional[str] = None
         self._push_event = asyncio.Event()
+        self._peer_prober = peer_prober
 
     def trigger(self) -> None:
         """Signal the reconciler to run immediately (push event received)."""
@@ -290,6 +295,29 @@ class Reconciler:
             self._state.update_cache("last_config_hash", result.hash)
             daemon_state.last_config_hash = result.hash
             daemon_state.last_config_revision = result.revision
+
+        if self._peer_prober and result.peers:
+            from daemon.peer_prober import ProbeTarget
+            targets = []
+            for peer in result.peers:
+                peer_device_id = peer.get("public_key", "")
+                endpoint = peer.get("endpoint")
+                endpoint_port = peer.get("endpoint_port", 51820)
+                if endpoint:
+                    targets.append(ProbeTarget(
+                        peer_device_id=peer_device_id,
+                        public_key=peer.get("public_key", ""),
+                        endpoint=endpoint,
+                        port=endpoint_port,
+                    ))
+                for cand in peer.get("endpoint_candidates", []):
+                    targets.append(ProbeTarget(
+                        peer_device_id=peer_device_id,
+                        public_key=peer.get("public_key", ""),
+                        endpoint=cand.get("endpoint", endpoint or ""),
+                        port=cand.get("port", endpoint_port),
+                    ))
+            self._peer_prober.update_targets(targets)
 
     async def _apply_config(
         self, interface: str, config: DesiredConfig, daemon_state: DaemonState

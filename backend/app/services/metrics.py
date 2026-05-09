@@ -135,6 +135,23 @@ RATE_LIMIT_BLOCKED = Counter(
     ["limiter", "path"],
 )
 
+# Endpoint probe metrics
+ENDPOINT_PROBE_TOTAL = Counter(
+    "midscale_endpoint_probe_total",
+    "Total endpoint probe results reported",
+    ["result"],
+)
+
+ENDPOINT_REACHABLE = Gauge(
+    "midscale_endpoint_reachable_total",
+    "Number of reachable endpoints",
+)
+
+ENDPOINT_SCORE_UPDATES = Counter(
+    "midscale_endpoint_score_updates_total",
+    "Total endpoint score recalculations",
+)
+
 # Health metrics
 HEALTH_CHECK = Gauge(
     "midscale_health_check",

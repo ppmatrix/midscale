@@ -46,6 +46,14 @@ class DeviceEndpoint(Base):
     last_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+    latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reachable: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_probe_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    failure_count: Mapped[int] = mapped_column(Integer, default=0)
+    success_count: Mapped[int] = mapped_column(Integer, default=0)
+    score: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

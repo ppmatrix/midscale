@@ -74,6 +74,12 @@ class EndpointReportResult:
 
 
 @dataclass
+class ProbeReportResult:
+    success: bool
+    error: Optional[str] = None
+
+
+@dataclass
 class RouteAdvertiseResult:
     success: bool
     error: Optional[str] = None

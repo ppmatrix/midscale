@@ -12,6 +12,7 @@ from daemon.models import (
     EndpointReportResult,
     EnrollResult,
     HeartbeatResult,
+    ProbeReportResult,
     RegistrationResult,
     RouteAdvertiseResult,
 )
@@ -235,6 +236,45 @@ class MidscaleAPIClient:
                 return EndpointReportResult(success=False, error=detail)
         except httpx.RequestError as e:
             return EndpointReportResult(success=False, error=str(e))
+
+    async def report_probe_result(
+        self,
+        peer_device_id: str,
+        endpoint: str,
+        reachable: bool,
+        port: int = 51820,
+        latency_ms: Optional[float] = None,
+        local_ip: Optional[str] = None,
+        public_ip: Optional[str] = None,
+    ) -> ProbeReportResult:
+        if not self._device_id:
+            return ProbeReportResult(success=False, error="not enrolled")
+        body = {
+            "peer_device_id": peer_device_id,
+            "endpoint": endpoint,
+            "reachable": reachable,
+            "port": port,
+            "source": "probe",
+        }
+        if latency_ms is not None:
+            body["latency_ms"] = latency_ms
+        if local_ip is not None:
+            body["local_ip"] = local_ip
+        if public_ip is not None:
+            body["public_ip"] = public_ip
+        try:
+            resp = await self._client.post(
+                f"{self._base_url}/api/v1/devices/{self._device_id}/probe-result",
+                json=body,
+                headers=self._auth_headers(),
+            )
+            if resp.status_code == 200:
+                return ProbeReportResult(success=True)
+            else:
+                detail = self._extract_error(resp)
+                return ProbeReportResult(success=False, error=detail)
+        except httpx.RequestError as e:
+            return ProbeReportResult(success=False, error=str(e))
 
     async def advertise_route(self, prefix: str) -> RouteAdvertiseResult:
         if not self._device_id:

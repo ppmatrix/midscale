@@ -33,6 +33,7 @@ from app.services.network_state import (
     build_endpoints_by_device,
 )
 from app.services.config_renderer import render_config, compute_config_hash
+from app.services.endpoint_scoring import compute_endpoint_score, select_best_endpoint, sort_endpoint_candidates
 from app.services.wg_adapter import WgCliAdapter, WgMockAdapter
 
 logger = structlog.get_logger(__name__)
@@ -292,19 +293,21 @@ async def build_config_v2(
     )
 
     peers: list[PeerInfo] = []
+    pk_to_device_id: dict[str, str] = {ds.public_key: ds.id for ds in device_states}
     for pp in plan.peers:
         endpoint_candidates: list[EndpointCandidate] = []
         best_ep = pp.endpoint
         best_port = pp.endpoint_port
         relay_fallback = pp.relay_fallback
 
-        d_eps = eps_by_device.get(pp.public_key, [])
+        peer_device_id = pk_to_device_id.get(pp.public_key, "")
+        d_eps = eps_by_device.get(peer_device_id, [])
         if d_eps and is_mesh_or_hybrid:
-            sorted_eps = sorted(
-                d_eps,
-                key=lambda e: (-e.priority, -e.last_seen.timestamp() if e.last_seen else 0)
-            )
+            sorted_eps = sort_endpoint_candidates(d_eps)
+            best = select_best_endpoint(d_eps)
+            best_id = str(best.id) if best else None
             for ep_obj in sorted_eps:
+                is_preferred = str(ep_obj.id) == best_id
                 endpoint_candidates.append(
                     EndpointCandidate(
                         endpoint=ep_obj.endpoint,
@@ -314,12 +317,16 @@ async def build_config_v2(
                         last_seen_at=ep_obj.last_seen.isoformat() if ep_obj.last_seen else None,
                         local_ip=ep_obj.local_ip,
                         public_ip=ep_obj.public_ip,
+                        reachable=ep_obj.reachable,
+                        latency_ms=ep_obj.latency_ms,
+                        score=ep_obj.score,
+                        preferred=is_preferred,
                     )
                 )
-                if best_ep is None:
+                if best_ep is None or is_preferred:
                     best_ep = ep_obj.endpoint
                     best_port = ep_obj.port
-                    relay_fallback = False
+                    relay_fallback = not ep_obj.reachable
 
         peer = PeerInfo(
             public_key=pp.public_key,

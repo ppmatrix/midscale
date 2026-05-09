@@ -25,6 +25,10 @@ class DaemonConfig:
     stun_servers: list[str] = field(default_factory=lambda: [])
     stun_timeout: float = 3.0
 
+    probe_enabled: bool = True
+    probe_interval_seconds: int = 180
+    probe_timeout: float = 5.0
+
     state_dir: str = "/var/lib/midscaled"
     config_dir: str = "/etc/midscaled"
     log_dir: str = "/var/log/midscaled"
@@ -94,5 +98,13 @@ class DaemonConfig:
             ],
             stun_timeout=float(
                 os.environ.get("MIDSCALE_STUN_TIMEOUT", "3.0")
+            ),
+            probe_enabled=os.environ.get("MIDSCALE_PROBE_ENABLED", "true").lower()
+            == "true",
+            probe_interval_seconds=int(
+                os.environ.get("MIDSCALE_PROBE_INTERVAL", "180")
+            ),
+            probe_timeout=float(
+                os.environ.get("MIDSCALE_PROBE_TIMEOUT", "5.0")
             ),
         )

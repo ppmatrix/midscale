@@ -53,6 +53,7 @@ midscale/
 │   │       ├── topology.py        # StarTopologyGenerator, MeshTopologyGenerator, HybridTopologyGenerator, TopologyType
 │   │   ├── daemon.py          # process_heartbeat, report_endpoint, stale_endpoint_cleanup
 │   │   ├── stun_server.py     # RFC 5389 STUN server (UDP binding response)
+│   │   ├── endpoint_scoring.py # compute_endpoint_score, select_best_endpoint, sort_endpoint_candidates
 │   │       ├── acl.py             # check_device_access (tag-based matching)
 │   │       ├── event_bus.py       # Redis pub/sub + in-memory fallback EventBus
 │   │       ├── event_types.py     # Event dataclass, CONFIG_CHANGED, channel helpers
@@ -82,6 +83,7 @@ midscale/
 │   │   ├── reconciler.py          # Config reconciliation loop with push trigger
 │   │   ├── endpoint_monitor.py    # STUN + local IP detection, endpoint change reporting
 │   │   ├── stun_client.py         # RFC 5389 STUN client (Binding Request/Response)
+│   │   ├── peer_prober.py         # UDP connectivity probing (reachability + latency)
 │   │   └── config.py              # Daemon config
 │   └── cmd/
 ├── frontend/
@@ -219,6 +221,7 @@ cd backend && python test_phase6.py
 |-------|-------|-------------|
 | 5 | 47 | Token auth, heartbeat/endpoint/route auth, config hash/rev, token rotation, revoke |
 | 6 | 51 | Star/mesh/hybrid topology, endpoint candidates, hash on endpoint change, topology persistence, stale cleanup |
+| 8 | 60+ | Endpoint scoring, candidate ordering, probe results, preferred endpoint, reachability/latency, metrics |
 
 ## What's Implemented vs What's Next
 
@@ -300,6 +303,12 @@ cd backend && python test_phase6.py
 
 ### Phase 7 — Platform Maturity
 - [x] STUN (RFC 5389) Binding Request/Response — backend server + daemon client
+- [x] Endpoint scoring and preferred candidate selection
+- [x] Peer connectivity probing (UDP reachability + latency)
+- [x] Config-v2 candidate ordering by score
+- [x] Probe result API (`POST /devices/{id}/probe-result`)
+- [x] Probe metrics (`midscale_endpoint_probe_total`, `midscale_endpoint_reachable_total`, `midscale_endpoint_score_updates_total`)
+- [x] Migration `c3cdac7f1f30` adds endpoint scoring fields
 - [ ] DERP relay for symmetric NAT
 - [ ] Multi-node control plane
 - [ ] Mobile support
