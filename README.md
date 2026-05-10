@@ -12,7 +12,7 @@ Midscale is a control plane for WireGuard that lets you manage mesh VPN networks
 ```
 ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
 │  midscaled  │────▶│  Midscale    │◀───▶│  PostgreSQL  │
-│  (Go daemon)│     │  API Server  │     │              │
+│  (Python)   │     │  API Server  │     │              │
 │             │     │  (FastAPI)   │     │  Redis       │
 │  WebSocket  │◀───▶│              │     └──────────────┘
 │  + polling  │     │  Web UI     │
@@ -122,7 +122,7 @@ Token rotation keeps the same prefix (it's a hint, not a secret).
 ## Tech Stack
 
 - **Backend**: Python 3.12+, FastAPI, SQLAlchemy 2.0 (async), PostgreSQL 16, Alembic, Pydantic v2
-- **Daemon**: Go (midscaled CLI)
+- **Daemon**: Python (midscaled CLI)
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS 3
 - **Infra**: Docker Compose, CoreDNS, Prometheus, Redis
 

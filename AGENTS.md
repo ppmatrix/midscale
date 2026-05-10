@@ -78,7 +78,7 @@ midscale/
 │   ├── test_phase5.py             # Phase 5 end-to-end tests (47 tests)
 │   ├── test_phase6.py             # Phase 6 end-to-end tests (51 tests)
 │   └── Dockerfile
-├── midscaled/                     # Go daemon (midscaled CLI)
+├── midscaled/                     # Python daemon (midscaled CLI)
 │   ├── daemon/
 │   │   ├── models.py              # DesiredPeer, ConfigV2PullResult
 │   │   ├── api_client.py          # HTTP client with auth headers, WebSocket connect
