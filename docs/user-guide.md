@@ -170,6 +170,77 @@ curl -s http://localhost:8000/metrics | grep midscale_
 
 ---
 
+## Using the Web UI
+
+The Midscale operations console provides visibility into every aspect of
+your VPN mesh.
+
+### Dashboard
+
+Logged in at `http://localhost`, you see:
+
+- **Summary cards**: Networks, total devices, online count, backend
+  health status
+- **Network cards**: Clickable cards showing subnet, topology badge,
+  device count, online count, and a warning indicator for networks with
+  no devices
+- **Search & filter**: Filter networks by name or subnet; sort by name
+  or device count
+- **Device table**: All devices across all networks with status,
+  enrollment, and last-seen columns
+
+### Network Detail
+
+Click a network card to open:
+
+- **Devices tab**: Full device table with columns for name, IP, status,
+  enrollment status, node-owned flag, last seen, handshake, tags, and
+  revoke actions
+- **Topology tab**: SVG graph showing the server hub at center and
+  devices arranged in a circle. Links are color-coded: green for direct,
+  orange dashed for relay, blue for hub fallback, gray for offline.
+  Below the graph, topology toggle buttons let you switch between star,
+  mesh, and hybrid modes.
+- **ACLs, DNS, Pre-auth Keys tabs**: Existing management interfaces
+- **Routes tab**: Table of advertised routes with approve/enable actions
+  and exit node badges
+- **Activity tab**: Recent audit log entries filtered to this network
+
+### Device Detail
+
+Click a device row to open:
+
+- **Overview**: Name, IP, status, enrollment, tags, timestamps
+- **Security**: Public key, token prefix, rotate keys/token, revoke
+- **Connectivity**: Direct vs relay status, preferred endpoint, latency,
+  score
+- **Config v2**: Revision, hash, generated_at, peer count, routes — with
+  copy/download buttons
+- **Endpoint Candidates**: Table of all known endpoints with port,
+  source, local/public IP, reachability, latency, score, and preferred
+  star indicator
+- **Relay/NAT**: Relay-required peers and relay candidate info
+
+### System Health
+
+Available at `/health` in the nav bar:
+
+- Liveness, readiness, and startup probe results
+- WireGuard controller, STUN server, relay server, WebSocket status
+- Key Prometheus metrics: device counts, relay sessions, NAT punches,
+  endpoint probes, WebSocket connections, controller errors
+- Auto-refreshes every 15 seconds
+
+### Audit Log
+
+Available at `/audit` in the nav bar:
+
+- Paginated table of all system mutations
+- Filter by action type or actor ID
+- Shows timestamp, action, actor, target type, target ID, IP address
+
+---
+
 ## Creating a Network
 
 Via the web dashboard (recommended):

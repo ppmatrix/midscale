@@ -30,7 +30,7 @@ Midscale is a control plane for WireGuard that lets you manage mesh VPN networks
 - **DNS**: CoreDNS integration for MagicDNS
 - **Subnet routing**: Advertise and approve routes, exit node support
 - **ACL engine**: Tag-based access control rules
-- **Audit logging**: Structured event records for all mutations
+- **Operations console**: Dashboard with summary cards, topology graph, device detail with endpoint/relay visibility, audit log viewer, health & metrics page
 - **Metrics**: Prometheus (`midscale_` namespace), health checks, rate limiting
 - **Config v2**: Deterministic SHA-256 hashed JSON configs, idempotent reconciliation
 - **NAT traversal**: Coordinated UDP hole punching for direct peer-to-peer connectivity
@@ -144,3 +144,4 @@ Token rotation keeps the same prefix (it's a hint, not a secret).
 | 8 | ✅ | Endpoint probing, scoring, preferred candidate selection |
 | 9 | ✅ | UDP hole punching, coordinated NAT traversal |
 | 10 | ✅ | DERP-style TCP relay fallback for symmetric NAT |
+| 11 | ✅ | Frontend operations console — topology graph, device detail, audit UI, health/metrics page |

@@ -95,18 +95,29 @@ midscale/
 │   │   ├── api/
 │   │   │   ├── client.ts          # Fetch wrapper, auth header, error formatting
 │   │   │   ├── auth.ts            # Login/register/refresh/me + types
-│   │   │   ├── networks.ts        # Network, Device, PreAuthKey, ACLRule, DNSEntry types + API calls
-│   │   │   └── devices.ts         # Device CRUD + rotate/config/register
-│   │   ├── hooks/useAuth.tsx      # AuthProvider context, login/register/logout, token in localStorage
+│   │   │   ├── networks.ts        # All API types + calls (networks, devices, routes, health, audit, metrics, NAT, relay)
+│   │   │   └── devices.ts         # Re-exports from networks.ts
+│   │   ├── hooks/
+│   │   │   ├── useAuth.tsx        # AuthProvider context, login/register/logout, token in localStorage
+│   │   │   └── useMidscaleEvents.ts # WebSocket + polling event hook
 │   │   ├── components/
-│   │   │   ├── Layout.tsx         # Navbar + Outlet
-│   │   │   └── ProtectedRoute.tsx # Redirect to /login if no token
+│   │   │   ├── Layout.tsx         # Navbar + Outlet with nav links
+│   │   │   ├── ProtectedRoute.tsx # Redirect to /login if no token
+│   │   │   ├── StatusBadge.tsx    # Colored status badge
+│   │   │   ├── MetricCard.tsx     # Metric display card
+│   │   │   ├── EmptyState.tsx     # Empty state with action
+│   │   │   ├── CopyButton.tsx     # Clipboard copy button
+│   │   │   ├── SectionCard.tsx    # Section container with title
+│   │   │   ├── TopologyGraph.tsx  # SVG network topology visualization
+│   │   │   └── LoadingSpinner.tsx # Loading indicator
 │   │   └── pages/
 │   │       ├── Login.tsx          # Email/password form
 │   │       ├── Register.tsx       # Display name/email/password form
-│   │       ├── Dashboard.tsx      # Networks grid + device table + create network
-│   │       ├── NetworkDetail.tsx  # Tabs: devices, ACLs, DNS, pre-auth keys
-│   │       └── DeviceDetail.tsx   # Device info, rotate keys, view/download config, toggle active
+│   │       ├── Dashboard.tsx      # Summary cards, network grid + search/filter, device table
+│   │       ├── NetworkDetail.tsx  # Tabs: devices, topology graph, ACLs, DNS, pre-auth keys, routes, activity
+│   │       ├── DeviceDetail.tsx   # Overview, security, connectivity, config-v2, endpoint candidates, relay/NAT
+│   │       ├── AuditLog.tsx       # Paginated audit log viewer with filters
+│   │       └── SystemHealth.tsx   # Health probes, service status, Prometheus metrics
 │   ├── package.json               # react, react-router-dom, vite, tailwind, typescript
 │   ├── vite.config.ts             # Proxy /api -> localhost:8000
 │   └── Dockerfile
@@ -229,6 +240,7 @@ cd backend && python test_phase10.py
 | 8 | 60+ | Endpoint scoring, candidate ordering, probe results, preferred endpoint, reachability/latency, metrics |
 | 9 | 109 | UDP hole punching, NAT session management, candidate pairs, connectivity validation, daemon punch engine |
 | 10 | 62 | DERP-style relay fallback, relay session lifecycle, config-v2 relay candidates, NAT fallback integration |
+| 11 | — | Frontend operations console — topology graph, enriched device/network detail, audit UI, health/metrics page |
 
 ## What's Implemented vs What's Next
 
@@ -318,6 +330,20 @@ cd backend && python test_phase10.py
 - [x] Migration `c3cdac7f1f30` adds endpoint scoring fields
 - [ ] Multi-node control plane
 - [ ] Mobile support
+
+### Phase 11 — Complete (Frontend Operations Console & Network Observability)
+- [x] Dashboard with summary cards (networks, devices, online, health status)
+- [x] Network cards with device count, online count, topology badge, search/filter
+- [x] Network detail tabs: Devices, Topology, ACLs, DNS, Pre-auth Keys, Routes, Activity
+- [x] Device detail sections: Overview, Security, Connectivity, Config v2, Endpoint Candidates, Relay/NAT
+- [x] Topology graph (plain SVG) with star/mesh/hybrid visualization, color-coded links, device labels
+- [x] Enrollment UX: key expiry, reusable flag, server URL, one-click copy enrollment command
+- [x] Routes tab: approve, enable/disable routes, exit node badges
+- [x] Audit log viewer with action/actor filters, pagination
+- [x] Health & metrics page: liveness/readiness/startup probes, Prometheus metrics parsing
+- [x] Reusable UI components: StatusBadge, MetricCard, EmptyState, CopyButton, SectionCard, LoadingSpinner, TopologyGraph
+- [x] WebSocket event hook with polling fallback
+- [x] Consolidated API layer (networks.ts) with typed methods for health, audit, routes, NAT, relay
 
 ### Phase 9 — Complete (UDP Hole Punching & Direct Connectivity)
 - [x] NAT session model (`NATSession`) with lifecycle states (pending→coordinating→punching→connected/failed/expired)
