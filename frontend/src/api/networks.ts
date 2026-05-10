@@ -7,6 +7,7 @@ export interface Network {
   description: string | null
   interface_name: string | null
   topology: string | null
+  owner_id: string | null
   created_at: string
 }
 

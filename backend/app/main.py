@@ -1,9 +1,11 @@
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.requests import Request
 
 from app.config import settings
 from app.database import init_db, close_db, get_session_factory
@@ -320,7 +322,32 @@ app.include_router(health_router.router)
 
 
 @app.get("/health")
-async def health():
+async def health(request: Request):
+    try:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            from app.core.security import decode_token
+            from app.models.user import User
+            payload = decode_token(token)
+            if payload and payload.get("type") == "access":
+                uid_str = payload.get("sub")
+                if uid_str:
+                    from sqlalchemy import select
+                    from app.database import get_session_factory
+                    async with get_session_factory()() as session:
+                        u_result = await session.execute(
+                            select(User).where(User.id == uuid.UUID(uid_str), User.is_active)
+                        )
+                        u = u_result.scalar_one_or_none()
+                        if u and not u.is_superuser:
+                            from fastapi.responses import JSONResponse
+                            return JSONResponse(
+                                status_code=status.HTTP_403_FORBIDDEN,
+                                content={"detail": "Access denied: superuser privileges required"},
+                            )
+    except Exception:
+        pass
     ctrl = get_wg_controller()
     wsm = _ws_manager
     stun = _stun_server
@@ -347,7 +374,34 @@ async def health():
 
 
 @app.get("/metrics")
-async def metrics():
+async def metrics(request: Request):
+    from fastapi import HTTPException, status
+    try:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            from app.core.security import decode_token
+            from app.models.user import User
+            payload = decode_token(token)
+            if payload and payload.get("type") == "access":
+                uid_str = payload.get("sub")
+                if uid_str:
+                    from sqlalchemy import select
+                    from app.database import get_session_factory
+                    async with get_session_factory()() as session:
+                        u_result = await session.execute(
+                            select(User).where(User.id == uuid.UUID(uid_str), User.is_active)
+                        )
+                        u = u_result.scalar_one_or_none()
+                        if u and not u.is_superuser:
+                            raise HTTPException(
+                                status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Access denied: superuser privileges required",
+                            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass
     from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
     from starlette.responses import Response
     return Response(

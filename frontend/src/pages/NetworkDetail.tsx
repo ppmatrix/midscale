@@ -125,12 +125,8 @@ export default function NetworkDetail() {
     }
   }
 
-  if (loading || !network) return <LoadingSpinner />
-
-  const onlineDevices = devices.filter(d => d.is_active)
-  const exitNodes = devices.filter(d => d.exit_node_id)
-
   const topologyLinks = useMemo(() => {
+    if (!network) return []
     const links: { source_id: string; target_id: string; type: 'direct' | 'relay' | 'hub' | 'offline' }[] = []
     const serverDev = devices.find(d => d.name === '__midscale_server__')
     const serverId = serverDev?.id || '__hub__'
@@ -153,7 +149,12 @@ export default function NetworkDetail() {
       }
     })
     return links
-  }, [devices, network.topology])
+  }, [devices, network?.topology])
+
+  if (loading || !network) return <LoadingSpinner />
+
+  const onlineDevices = devices.filter(d => d.is_active)
+  const exitNodes = devices.filter(d => d.exit_node_id)
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'devices', label: `Devices (${devices.length})` },

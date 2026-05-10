@@ -8,7 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.api.deps import get_current_user, get_current_device, get_current_device_by_id
+from app.api.deps import (
+    get_current_user, get_current_device, get_current_device_by_id,
+    require_network_owner,
+)
 from app.models.user import User
 from app.models.device import Device
 from app.models.network import Network
@@ -46,11 +49,10 @@ async def list_all_devices(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
-    result = await session.execute(
-        select(Device)
-        .where(Device.user_id == current_user.id)
-        .order_by(Device.created_at)
-    )
+    query = select(Device).order_by(Device.created_at)
+    if not current_user.is_superuser:
+        query = query.where(Device.user_id == current_user.id)
+    result = await session.execute(query)
     return result.scalars().all()
 
 
@@ -67,6 +69,16 @@ async def get_device(
     device = result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    if not current_user.is_superuser:
+        net_result = await session.execute(
+            select(Network).where(Network.id == device.network_id)
+        )
+        net = net_result.scalar_one_or_none()
+        if not net or net.owner_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: you do not own this device's network",
+            )
     return device
 
 
@@ -85,6 +97,16 @@ async def update_device(
     device = result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    if not current_user.is_superuser:
+        net_result = await session.execute(
+            select(Network).where(Network.id == device.network_id)
+        )
+        net = net_result.scalar_one_or_none()
+        if not net or net.owner_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: you do not own this device's network",
+            )
     if req.name is not None:
         device.name = req.name
     if req.dns_enabled is not None:
@@ -189,6 +211,16 @@ async def enroll_device(
     device = result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    if not current_user.is_superuser:
+        net_result = await session.execute(
+            select(Network).where(Network.id == device.network_id)
+        )
+        net = net_result.scalar_one_or_none()
+        if not net or net.owner_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: you do not own this device's network",
+            )
     if not device.is_node_owned:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -232,11 +264,23 @@ async def get_device_config_endpoint(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
-    config = await get_device_config(session, device_id)
+    from fastapi import HTTPException, status
     result = await session.execute(
         select(Device).where(Device.id == device_id)
     )
-    device = result.scalar_one()
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    if not current_user.is_superuser:
+        net_result = await session.execute(
+            select(Network).where(Network.id == device.network_id, Network.owner_id == current_user.id)
+        )
+        if not net_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: you do not own this device's network",
+            )
+    config = await get_device_config(session, device_id)
     return DeviceConfigResponse(
         config=config,
         filename=f"midscale-{device.name}.conf",
@@ -291,6 +335,15 @@ async def revoke_device(
     device = result.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    if not current_user.is_superuser:
+        net_result = await session.execute(
+            select(Network).where(Network.id == device.network_id, Network.owner_id == current_user.id)
+        )
+        if not net_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: you do not own this device's network",
+            )
     if device.enrollment_status == "revoked":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

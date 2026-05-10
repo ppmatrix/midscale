@@ -34,6 +34,7 @@ class NetworkResponse(BaseModel):
     description: Optional[str]
     interface_name: Optional[str]
     topology: Optional[str] = None
+    owner_id: Optional[uuid.UUID] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

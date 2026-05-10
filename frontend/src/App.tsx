@@ -11,7 +11,8 @@ import AuditLog from './pages/AuditLog'
 import SystemHealth from './pages/SystemHealth'
 
 function AppRoutes() {
-  const { token } = useAuth()
+  const { token, user } = useAuth()
+  const isSuperuser = user?.is_superuser ?? false
 
   return (
     <Routes>
@@ -22,8 +23,8 @@ function AppRoutes() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/networks/:networkId" element={<NetworkDetail />} />
           <Route path="/devices/:deviceId" element={<DeviceDetail />} />
-          <Route path="/audit" element={<AuditLog />} />
-          <Route path="/health" element={<SystemHealth />} />
+          {isSuperuser && <Route path="/audit" element={<AuditLog />} />}
+          {isSuperuser && <Route path="/health" element={<SystemHealth />} />}
         </Route>
       </Route>
     </Routes>

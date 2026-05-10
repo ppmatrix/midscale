@@ -144,7 +144,7 @@ midscale/
 - `last_seen_at` set on each heartbeat (separate from `last_handshake` which is WireGuard protocol level)
 - `device_token_prefix` stores first 8 chars of token secret for O(1) daemon auth lookup (indexed)
 - `DeviceEndpoint` stores endpoint candidates with priority/active flags for mesh/hybrid routing
-- Migration chain: `e44cb5174045` → `b02bde8a120e` → `2c1a3b5e6d7f` → `3d4e5f6a7b8c` → `4a5b6c7d8e9f` → `5f6a7b8c9d0e` → `6a7b8c9d0e1f` → `7b8c9d0e1f2a` → `8c9d0e1f2a3b` → `737e64bcc13f` → `c3cdac7f1f30` → `9d0e1f2a3b4c` → `ae1b2c3d4e5f`
+- Migration chain: `e44cb5174045` → `b02bde8a120e` → `2c1a3b5e6d7f` → `3d4e5f6a7b8c` → `4a5b6c7d8e9f` → `5f6a7b8c9d0e` → `6a7b8c9d0e1f` → `7b8c9d0e1f2a` → `8c9d0e1f2a3b` → `737e64bcc13f` → `c3cdac7f1f30` → `9d0e1f2a3b4c` → `ae1b2c3d4e5f` → `1ea06c46da06`
 
 ## WireGuard Integration
 
@@ -241,6 +241,7 @@ cd backend && python test_phase10.py
 | 9 | 109 | UDP hole punching, NAT session management, candidate pairs, connectivity validation, daemon punch engine |
 | 10 | 62 | DERP-style relay fallback, relay session lifecycle, config-v2 relay candidates, NAT fallback integration |
 | 11 | — | Frontend operations console — topology graph, enriched device/network detail, audit UI, health/metrics page |
+| 12 | 40+ | Multi-tenant isolation, ownership model, cross-user access denial, superuser bypass, audit/metrics restrictions |
 
 ## What's Implemented vs What's Next
 
@@ -344,6 +345,26 @@ cd backend && python test_phase10.py
 - [x] Reusable UI components: StatusBadge, MetricCard, EmptyState, CopyButton, SectionCard, LoadingSpinner, TopologyGraph
 - [x] WebSocket event hook with polling fallback
 - [x] Consolidated API layer (networks.ts) with typed methods for health, audit, routes, NAT, relay
+
+### Phase 12 — Complete (Multi-Tenant Isolation & Authorization Hardening)
+- [x] `owner_id` FK on `Network` model pointing to `User.id`
+- [x] Migration `1ea06c46da06` adds `owner_id`, index, FK constraint
+- [x] Auto-set `owner_id=current_user.id` on network creation
+- [x] `require_network_owner()` helper in deps.py (superuser bypass, 403 for non-owners)
+- [x] `filter_owned_networks()` helper for list queries (superuser sees all)
+- [x] All network endpoints enforce ownership (GET/PUT/DELETE network, sub-resources)
+- [x] Device endpoints enforce network ownership (GET/PUT device, enroll, revoke, config-v1)
+- [x] Device `list_all` filtered by `user_id` for normal users, all for superusers
+- [x] Routes/DNS/ACLs/preauth-keys all require network ownership
+- [x] Audit log restricted to superusers (already was via `get_current_superuser`)
+- [x] Health summary endpoint (`/health`) restricted to superusers (soft check via Bearer token)
+- [x] Metrics endpoint (`/metrics`) restricted to superusers (soft check via Bearer token)
+- [x] Frontend hides System Health and Audit Log nav links/routes for non-superusers
+- [x] Dashboard health fetch skipped for non-superusers
+- [x] "Owned by" badges on network cards visible only to superusers
+- [x] Normal users start with zero visible networks/devices
+- [x] Cross-user resource access returns 403 (not 404) to prevent ID enumeration
+- [x] Migration chain updated: `ae1b2c3d4e5f` → `1ea06c46da06`
 
 ### Phase 9 — Complete (UDP Hole Punching & Direct Connectivity)
 - [x] NAT session model (`NATSession`) with lifecycle states (pending→coordinating→punching→connected/failed/expired)

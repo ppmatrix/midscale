@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_network_owner
 from app.models.user import User
 from app.models.dns import DNSEntry
 from app.models.network import Network
@@ -22,6 +22,7 @@ async def list_dns(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    await require_network_owner(session, network_id, current_user)
     result = await session.execute(
         select(DNSEntry)
         .where(DNSEntry.network_id == network_id)
@@ -38,12 +39,7 @@ async def create_dns(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
-    from fastapi import HTTPException, status
-    net_result = await session.execute(
-        select(Network).where(Network.id == network_id)
-    )
-    if not net_result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Network not found")
+    await require_network_owner(session, network_id, current_user)
     entry = DNSEntry(
         network_id=network_id,
         domain=req.domain,
@@ -73,6 +69,7 @@ async def delete_dns(
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     from fastapi import HTTPException, status
+    await require_network_owner(session, network_id, current_user)
     result = await session.execute(
         select(DNSEntry).where(
             DNSEntry.id == entry_id,

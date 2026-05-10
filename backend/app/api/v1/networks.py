@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_network_owner, filter_owned_networks
 from app.models.user import User
 from app.models.network import Network
 from app.models.device import Device
@@ -28,8 +28,7 @@ async def list_networks(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
-    result = await session.execute(select(Network).order_by(Network.created_at))
-    return result.scalars().all()
+    return await filter_owned_networks(session, current_user)
 
 
 @router.post("", response_model=NetworkResponse, status_code=201)
@@ -44,6 +43,7 @@ async def create_network(
         subnet=req.subnet,
         description=req.description,
         interface_name=req.interface_name,
+        owner_id=current_user.id,
     )
     session.add(network)
     await session.flush()
@@ -83,14 +83,7 @@ async def get_network(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
-    result = await session.execute(
-        select(Network).where(Network.id == network_id)
-    )
-    network = result.scalar_one_or_none()
-    if not network:
-        from fastapi import HTTPException, status
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Network not found")
-    return network
+    return await require_network_owner(session, network_id, current_user)
 
 
 @router.put("/{network_id}", response_model=NetworkResponse)
@@ -101,13 +94,7 @@ async def update_network(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
-    from fastapi import HTTPException, status
-    result = await session.execute(
-        select(Network).where(Network.id == network_id)
-    )
-    network = result.scalar_one_or_none()
-    if not network:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Network not found")
+    network = await require_network_owner(session, network_id, current_user)
     if req.name is not None:
         network.name = req.name
     if req.description is not None:
@@ -137,13 +124,7 @@ async def delete_network(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
-    from fastapi import HTTPException, status
-    result = await session.execute(
-        select(Network).where(Network.id == network_id)
-    )
-    network = result.scalar_one_or_none()
-    if not network:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Network not found")
+    network = await require_network_owner(session, network_id, current_user)
     await audit_logger.log(
         session=session,
         action="network.delete",
@@ -164,6 +145,7 @@ async def list_devices(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    await require_network_owner(session, network_id, current_user)
     result = await session.execute(
         select(Device)
         .where(Device.network_id == network_id)
@@ -180,13 +162,7 @@ async def create_device(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
-    from fastapi import HTTPException, status
-    net_result = await session.execute(
-        select(Network).where(Network.id == network_id)
-    )
-    network = net_result.scalar_one_or_none()
-    if not network:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Network not found")
+    network = await require_network_owner(session, network_id, current_user)
     ip = await allocate_ip(session, network_id, network.subnet)
     device = Device(
         name=req.name,
@@ -224,13 +200,7 @@ async def create_node_device(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
-    from fastapi import HTTPException, status
-    net_result = await session.execute(
-        select(Network).where(Network.id == network_id)
-    )
-    network = net_result.scalar_one_or_none()
-    if not network:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Network not found")
+    network = await require_network_owner(session, network_id, current_user)
     ip = await allocate_ip(session, network_id, network.subnet)
     device = Device(
         name=req.name,
@@ -263,6 +233,7 @@ async def list_preauth_keys(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    await require_network_owner(session, network_id, current_user)
     result = await session.execute(
         select(PreAuthKey)
         .where(PreAuthKey.network_id == network_id)
@@ -285,12 +256,7 @@ async def create_preauth_key(
 ):
     import secrets
     from datetime import datetime, timedelta, timezone
-    from fastapi import HTTPException, status
-    net_result = await session.execute(
-        select(Network).where(Network.id == network_id)
-    )
-    if not net_result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Network not found")
+    await require_network_owner(session, network_id, current_user)
     key = PreAuthKey(
         key=f"midscale_{secrets.token_urlsafe(32)}",
         network_id=network_id,
@@ -322,6 +288,7 @@ async def delete_preauth_key(
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     from fastapi import HTTPException, status
+    await require_network_owner(session, network_id, current_user)
     result = await session.execute(
         select(PreAuthKey).where(
             PreAuthKey.id == key_id, PreAuthKey.network_id == network_id

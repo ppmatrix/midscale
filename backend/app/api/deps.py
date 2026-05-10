@@ -10,6 +10,7 @@ from app.database import get_session
 from app.core.security import decode_token, verify_password
 from app.models.user import User
 from app.models.device import Device
+from app.models.network import Network
 from app.services.metrics import DAEMON_AUTH_FAILURES
 
 bearer_scheme = HTTPBearer()
@@ -157,3 +158,42 @@ def _check_device_status(device: Device) -> Device:
             detail="Device enrollment not yet completed",
         )
     return device
+
+
+async def require_network_owner(
+    session: AsyncSession,
+    network_id: uuid.UUID,
+    current_user: User,
+) -> Network:
+    """Fetch a network and verify the current user owns it (or is superuser).
+
+    Raises 404 if not found, 403 if not owner.
+    Returns the network on success.
+    """
+    result = await session.execute(
+        select(Network).where(Network.id == network_id)
+    )
+    network = result.scalar_one_or_none()
+    if not network:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Network not found",
+        )
+    if not current_user.is_superuser and network.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: you do not own this network",
+        )
+    return network
+
+
+async def filter_owned_networks(
+    session: AsyncSession,
+    current_user: User,
+) -> list[Network]:
+    """Return all networks if superuser, or only owned networks for normal users."""
+    query = select(Network).order_by(Network.created_at)
+    if not current_user.is_superuser:
+        query = query.where(Network.owner_id == current_user.id)
+    result = await session.execute(query)
+    return result.scalars().all()

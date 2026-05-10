@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.api.deps import get_current_user, get_current_device_by_id
+from app.api.deps import get_current_user, get_current_device_by_id, require_network_owner
 from app.models.user import User
 from app.models.device import Device
 from app.models.network import Network
@@ -60,6 +60,7 @@ async def list_routes(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    await require_network_owner(session, network_id, current_user)
     result = await session.execute(
         select(AdvertisedRoute)
         .where(AdvertisedRoute.network_id == network_id)
@@ -74,6 +75,14 @@ async def list_device_routes(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    from fastapi import HTTPException, status
+    dev_result = await session.execute(
+        select(Device).where(Device.id == device_id)
+    )
+    device = dev_result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    await require_network_owner(session, device.network_id, current_user)
     result = await session.execute(
         select(AdvertisedRoute)
         .where(AdvertisedRoute.device_id == device_id)
@@ -92,12 +101,7 @@ async def advertise_route(
 ):
     from fastapi import HTTPException, status
 
-    net_result = await session.execute(
-        select(Network).where(Network.id == network_id)
-    )
-    network = net_result.scalar_one_or_none()
-    if not network:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Network not found")
+    network = await require_network_owner(session, network_id, current_user)
 
     dev_result = await session.execute(
         select(Device).where(
@@ -167,6 +171,7 @@ async def approve_route(
     route = result.scalar_one_or_none()
     if not route:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Route not found")
+    await require_network_owner(session, route.network_id, current_user)
 
     was_approved = route.approved
     route.approved = req.approved
@@ -211,6 +216,7 @@ async def update_route(
     route = result.scalar_one_or_none()
     if not route:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Route not found")
+    await require_network_owner(session, route.network_id, current_user)
 
     if req.enabled is not None:
         route.enabled = req.enabled
@@ -245,6 +251,7 @@ async def delete_route(
     route = result.scalar_one_or_none()
     if not route:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Route not found")
+    await require_network_owner(session, route.network_id, current_user)
 
     await audit_logger.log(
         session=session,

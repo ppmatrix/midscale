@@ -1,12 +1,15 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { networksApi, devicesApi, healthApi, type Network, type Device, type HealthSummary } from '../api/networks'
+import { useAuth } from '../hooks/useAuth'
 import MetricCard from '../components/MetricCard'
 import StatusBadge from '../components/StatusBadge'
 import EmptyState from '../components/EmptyState'
 import LoadingSpinner from '../components/LoadingSpinner'
 
 export default function Dashboard() {
+  const { user } = useAuth()
+  const isSuperuser = user?.is_superuser ?? false
   const navigate = useNavigate()
   const [networks, setNetworks] = useState<Network[]>([])
   const [devices, setDevices] = useState<Device[]>([])
@@ -22,14 +25,17 @@ export default function Dashboard() {
 
   const fetchData = () => {
     setError('')
-    Promise.all([
+    const promises: Promise<unknown>[] = [
       networksApi.list(),
       devicesApi.list(),
-      healthApi.summary().catch(() => null),
-    ]).then(([nets, devs, h]) => {
-      setNetworks(nets)
-      setDevices(devs)
-      setHealth(h)
+    ]
+    if (isSuperuser) {
+      promises.push(healthApi.summary().catch(() => null))
+    }
+    Promise.all(promises).then(([nets, devs, h]) => {
+      setNetworks(nets as Network[])
+      setDevices(devs as Device[])
+      setHealth(h as HealthSummary | null)
     }).catch((err) => {
       setError(err instanceof Error ? err.message : 'Failed to load data')
     }).finally(() => setLoading(false))
@@ -37,7 +43,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [isSuperuser])
 
   const onlineDevices = useMemo(() => devices.filter(d => d.is_active), [devices])
   const totalRelay = 0
@@ -186,9 +192,16 @@ export default function Dashboard() {
               >
                 <div className="flex items-start justify-between">
                   <h3 className="font-semibold text-lg">{net.name}</h3>
-                  {net.topology && (
-                    <StatusBadge status={net.topology} variant={net.topology === 'mesh' ? 'blue' : net.topology === 'hybrid' ? 'orange' : 'green'} />
-                  )}
+                  <div className="flex items-center gap-2">
+                    {isSuperuser && net.owner_id && (
+                      <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                        Owned by {net.owner_id.slice(0, 8)}…
+                      </span>
+                    )}
+                    {net.topology && (
+                      <StatusBadge status={net.topology} variant={net.topology === 'mesh' ? 'blue' : net.topology === 'hybrid' ? 'orange' : 'green'} />
+                    )}
+                  </div>
                 </div>
                 <p className="text-sm text-gray-500 font-mono mt-1">{net.subnet}</p>
                 {net.description && <p className="text-sm text-gray-400 mt-1">{net.description}</p>}

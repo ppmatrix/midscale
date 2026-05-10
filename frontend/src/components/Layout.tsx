@@ -13,8 +13,10 @@ export default function Layout() {
 
   const navLinks = [
     { to: '/', label: 'Dashboard' },
-    { to: '/health', label: 'System' },
-    { to: '/audit', label: 'Audit' },
+    ...(user?.is_superuser ? [
+      { to: '/health', label: 'System' },
+      { to: '/audit', label: 'Audit' },
+    ] : []),
   ]
 
   return (
