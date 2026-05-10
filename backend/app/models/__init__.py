@@ -7,6 +7,8 @@ from app.models.dns import DNSEntry
 from app.models.endpoint import DeviceEndpoint
 from app.models.audit import AuditLog
 from app.models.route import AdvertisedRoute
+from app.models.nat_session import NATSession
+from app.models.relay_session import RelaySession
 
 __all__ = [
     "User",
@@ -18,4 +20,6 @@ __all__ = [
     "DeviceEndpoint",
     "AuditLog",
     "AdvertisedRoute",
+    "NATSession",
+    "RelaySession",
 ]

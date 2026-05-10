@@ -86,6 +86,16 @@ class RouteAdvertiseResult:
 
 
 @dataclass
+class RelaySessionResult:
+    success: bool
+    session_id: Optional[str] = None
+    relay_token: Optional[str] = None
+    relay_region: Optional[str] = None
+    relay_node: Optional[str] = None
+    error: Optional[str] = None
+
+
+@dataclass
 class PeerState:
     public_key: str
     allowed_ips: list[str] = field(default_factory=list)
@@ -110,6 +120,8 @@ class DesiredPeer:
     endpoint: Optional[str] = None
     endpoint_port: Optional[int] = None
     persistent_keepalive: Optional[int] = None
+    relay_required: bool = False
+    relay_candidates: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass

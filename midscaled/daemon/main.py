@@ -11,6 +11,8 @@ from daemon.api_client import MidscaleAPIClient
 from daemon.config import DaemonConfig
 from daemon.endpoint_monitor import EndpointMonitor
 from daemon.heartbeat import HeartbeatSender
+from daemon.hole_puncher import HolePuncher
+from daemon.relay_client import DaemonRelayClient
 from daemon.route_advertiser import RouteAdvertiser
 from daemon.logging import setup_logging
 from daemon.models import DaemonState
@@ -153,6 +155,8 @@ class MidscaledDaemon:
         self._shutdown_event: Optional[asyncio.Event] = None
         self._ws_client: Optional[WebSocketClient] = None
         self._daemon_ws: Optional[DaemonWebSocketClient] = None
+        self._hole_puncher: Optional[HolePuncher] = None
+        self._relay_client: Optional[DaemonRelayClient] = None
 
     async def run(self) -> None:
         setup_logging(debug=self._config.debug)
@@ -216,11 +220,21 @@ class MidscaledDaemon:
             await self._api_client.close()
             sys.exit(1)
 
+        if self._config.relay_enabled and device_token:
+            self._relay_client = DaemonRelayClient(
+                config=self._config,
+                api_client=self._api_client,
+                device_id=stored_id or "",
+                device_token=device_token,
+            )
+            await self._relay_client.start()
+
         self._reconciler = Reconciler(
             config=self._config,
             api_client=self._api_client,
             wg_runtime=self._wg_runtime,
             state_store=self._state_store,
+            relay_client=self._relay_client,
         )
         await self._reconciler.start(self._state)
 
@@ -236,6 +250,13 @@ class MidscaledDaemon:
         )
         await self._endpoint_monitor.start(self._state)
 
+        self._hole_puncher = HolePuncher(
+            enabled=self._config.hole_punch_enabled,
+            timeout=self._config.hole_punch_timeout,
+            retries=self._config.hole_punch_retries,
+        )
+        await self._hole_puncher.start()
+
         if self._config.advertised_routes:
             self._route_advertiser = RouteAdvertiser(
                 config=self._config,
@@ -250,6 +271,9 @@ class MidscaledDaemon:
                 device_token=device_token,
                 device_id=stored_id or "",
                 on_config_changed=self._on_ws_config_changed,
+                on_nat_punch_requested=self._on_nat_punch_requested,
+                on_nat_punch_started=self._on_nat_punch_started,
+                on_relay_fallback=self._on_relay_fallback,
             )
             await self._daemon_ws.start()
             self._ws_client = WebSocketClient(
@@ -316,9 +340,119 @@ class MidscaledDaemon:
         msg_type = data.get("type", "")
         if msg_type == "config.changed":
             self._on_ws_config_changed(data)
+        elif msg_type == "nat.punch_requested":
+            self._on_nat_punch_requested(data)
+        elif msg_type == "nat.punch_started":
+            self._on_nat_punch_started(data)
+
+    def _on_nat_punch_requested(self, data: dict) -> None:
+        logger.info("nat punch requested", data=data)
+        if not self._hole_puncher or not self._hole_puncher.enabled:
+            logger.info("hole punching disabled, ignoring request")
+            return
+
+        session_id = data.get("data", {}).get("session_id", "")
+        target_device_id = data.get("data", {}).get("target_device_id", "")
+        candidates = data.get("data", {}).get("candidates", [])
+
+        if not session_id or not target_device_id:
+            logger.warning("incomplete nat punch request", data=data)
+            return
+
+        asyncio.create_task(
+            self._hole_puncher.initiate_punch(
+                session_id=session_id,
+                target_device_id=target_device_id,
+                candidates=candidates,
+                on_success=self._on_punch_success,
+                on_failure=self._on_punch_failure,
+                on_relay_fallback=self._on_punch_relay_fallback,
+            )
+        )
+
+    def _on_relay_fallback(self, data: dict) -> None:
+        logger.info("relay fallback requested", data=data)
+        if not self._relay_client or not self._relay_client.is_connected:
+            logger.warning("relay client not connected, cannot establish relay fallback")
+            return
+        event_data = data.get("data", {})
+        relay_session_id = event_data.get("relay_session_id", "")
+        target_device_id = event_data.get("target_device_id", "")
+        if relay_session_id:
+            asyncio.create_task(
+                self._relay_client.connect_session(
+                    session_id=relay_session_id,
+                    token="",
+                )
+            )
+
+    def _on_nat_punch_started(self, data: dict) -> None:
+        logger.info("nat punch started", session_id=data.get("data", {}).get("session_id", ""))
+
+    def _on_punch_success(self, session) -> None:
+        logger.info("punch succeeded, triggering reconcile and reporting", session_id=session.session_id)
+        if self._reconciler:
+            self._reconciler.trigger()
+        if self._api_client:
+            asyncio.create_task(
+                self._api_client.report_nat_punch_result(
+                    session_id=session.session_id,
+                    success=True,
+                    selected_endpoint=session.result_endpoint,
+                    selected_port=session.result_port,
+                    latency_ms=session.result_latency_ms,
+                )
+            )
+            asyncio.create_task(
+                self._api_client.report_nat_connectivity_validation(
+                    session_id=session.session_id,
+                    target_endpoint=session.result_endpoint or "",
+                    target_port=session.result_port or 51820,
+                    reachable=True,
+                    latency_ms=session.result_latency_ms,
+                )
+            )
+
+    def _on_punch_failure(self, session) -> None:
+        logger.warning("punch failed, fallback to relay", session_id=session.session_id)
+        if self._api_client:
+            asyncio.create_task(
+                self._api_client.report_nat_punch_result(
+                    session_id=session.session_id,
+                    success=False,
+                    error="all candidate pairs failed",
+                )
+            )
+
+    def _on_punch_relay_fallback(self, session) -> None:
+        logger.info(
+            "punch failed, requesting relay fallback",
+            session_id=session.session_id,
+            target_device_id=session.target_device_id,
+        )
+        if self._api_client and self._relay_client:
+            asyncio.create_task(
+                self._request_relay_fallback(session)
+            )
+
+    async def _request_relay_fallback(self, session) -> None:
+        if not self._api_client or not self._relay_client:
+            return
+        result = await self._api_client.request_relay_session(
+            target_device_id=session.target_device_id,
+        )
+        if result.success and result.session_id and result.relay_token:
+            await self._relay_client.connect_session(
+                session_id=result.session_id,
+                token=result.relay_token,
+            )
 
     async def _cleanup(self) -> None:
         logger.info("shutting down midscaled")
+        if self._hole_puncher:
+            await self._hole_puncher.stop()
+        if self._relay_client:
+            await self._relay_client.stop()
         if self._ws_client:
             await self._ws_client.close()
         if self._daemon_ws:

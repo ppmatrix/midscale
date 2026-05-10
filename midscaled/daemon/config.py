@@ -29,6 +29,16 @@ class DaemonConfig:
     probe_interval_seconds: int = 180
     probe_timeout: float = 5.0
 
+    hole_punch_enabled: bool = True
+    hole_punch_timeout: float = 10.0
+    hole_punch_retries: int = 3
+
+    relay_enabled: bool = True
+    relay_host: str = "127.0.0.1"
+    relay_port: int = 8765
+    relay_region: str = "default"
+    relay_reconnect_delay: float = 5.0
+
     state_dir: str = "/var/lib/midscaled"
     config_dir: str = "/etc/midscaled"
     log_dir: str = "/var/log/midscaled"
@@ -106,5 +116,21 @@ class DaemonConfig:
             ),
             probe_timeout=float(
                 os.environ.get("MIDSCALE_PROBE_TIMEOUT", "5.0")
+            ),
+            hole_punch_enabled=os.environ.get("MIDSCALE_HOLE_PUNCH_ENABLED", "true").lower()
+            == "true",
+            hole_punch_timeout=float(
+                os.environ.get("MIDSCALE_HOLE_PUNCH_TIMEOUT", "10.0")
+            ),
+            hole_punch_retries=int(
+                os.environ.get("MIDSCALE_HOLE_PUNCH_RETRIES", "3")
+            ),
+            relay_enabled=os.environ.get("MIDSCALE_RELAY_ENABLED", "true").lower()
+            == "true",
+            relay_host=os.environ.get("MIDSCALE_RELAY_HOST", "127.0.0.1"),
+            relay_port=int(os.environ.get("MIDSCALE_RELAY_PORT", "8765")),
+            relay_region=os.environ.get("MIDSCALE_RELAY_REGION", "default"),
+            relay_reconnect_delay=float(
+                os.environ.get("MIDSCALE_RELAY_RECONNECT_DELAY", "5.0")
             ),
         )

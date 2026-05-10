@@ -31,7 +31,8 @@ midscale/
 │   │   │   ├── endpoint.py        # DeviceEndpoint: id, device_id, endpoint, source, port, local_ip, public_ip, priority, is_active, last_seen
 │   │   │   ├── preauth_key.py     # id(UUID), key, network_id, reusable, expires_at, used_by(JSON)
 │   │   │   ├── acl.py             # id(UUID), network_id, src_tags(JSON), dst_tags(JSON), action, priority
-│   │   │   └── dns.py             # id(UUID), network_id, domain, address
+│   │   │   ├── dns.py             # id(UUID), network_id, domain, address
+│   │   │   └── nat_session.py     # id(UUID), initiator_device_id, target_device_id, state, selected_candidate(JSON), connectivity_established, metadata(JSON), expires_at
 │   │   ├── schemas/               # Pydantic v2 schemas (from_attributes=True for responses)
 │   │   │   ├── device.py          # Device, PeerInfo, EndpointCandidate, EndpointReport, DeviceConfigV2Response, ...
 │   │   │   ├── daemon.py          # DaemonWsEvent, ConfigChangedEvent
@@ -44,7 +45,8 @@ midscale/
 │   │   │   ├── dns.py             # CRUD DNS entries per network
 │   │   │   ├── routes.py          # Advertise, approve, list routes
 │   │   │   ├── ws.py              # Daemon WebSocket endpoint
-│   │   │   └── audit.py           # Audit log querying
+│   │   │   ├── audit.py           # Audit log querying
+│   │   │   └── nat.py             # NAT hole punching coordination (punch, result, validate, get session)
 │   │   ├── api/deps.py            # get_current_user, get_current_superuser, get_current_device, get_current_device_by_id, _lookup_device_by_token
 │   │   └── services/
 │   │       ├── auth.py            # register/login/refresh business logic
@@ -67,7 +69,8 @@ midscale/
 │   │       ├── audit.py           # Audit logging service
 │   │       ├── health.py          # Health checks
 │   │       ├── dns_provider.py    # CoreDNS file provider integration
-│   │       └── dns_records.py     # DNS record sync logic
+│   │       ├── dns_records.py     # DNS record sync logic
+│   │       └── nat.py             # NAT traversal session management, candidate coordination, endpoint promotion
 │   ├── alembic/                   # env.py (async), versions/, script.py.mako
 │   ├── alembic.ini
 │   ├── requirements.txt
@@ -84,7 +87,8 @@ midscale/
 │   │   ├── endpoint_monitor.py    # STUN + local IP detection, endpoint change reporting
 │   │   ├── stun_client.py         # RFC 5389 STUN client (Binding Request/Response)
 │   │   ├── peer_prober.py         # UDP connectivity probing (reachability + latency)
-│   │   └── config.py              # Daemon config
+│   │   ├── hole_puncher.py        # UDP hole punching engine (simultaneous sends, candidate pairs, connectivity validation)
+│   │   └── config.py              # Daemon config (incl. hole_punch_enabled, hole_punch_timeout, hole_punch_retries)
 │   └── cmd/
 ├── frontend/
 │   ├── src/
@@ -129,7 +133,7 @@ midscale/
 - `last_seen_at` set on each heartbeat (separate from `last_handshake` which is WireGuard protocol level)
 - `device_token_prefix` stores first 8 chars of token secret for O(1) daemon auth lookup (indexed)
 - `DeviceEndpoint` stores endpoint candidates with priority/active flags for mesh/hybrid routing
-- Migration chain: `e44cb5174045` → `b02bde8a120e` → `2c1a3b5e6d7f` → `3d4e5f6a7b8c` → `4a5b6c7d8e9f` → `5f6a7b8c9d0e` → `6a7b8c9d0e1f` → `7b8c9d0e1f2a` → `8c9d0e1f2a3b` → `737e64bcc13f`
+- Migration chain: `e44cb5174045` → `b02bde8a120e` → `2c1a3b5e6d7f` → `3d4e5f6a7b8c` → `4a5b6c7d8e9f` → `5f6a7b8c9d0e` → `6a7b8c9d0e1f` → `7b8c9d0e1f2a` → `8c9d0e1f2a3b` → `737e64bcc13f` → `c3cdac7f1f30` → `9d0e1f2a3b4c` → `ae1b2c3d4e5f`
 
 ## WireGuard Integration
 
@@ -213,6 +217,7 @@ cd backend && alembic upgrade head
 # Run tests (requires backend running on localhost:8000)
 cd backend && python test_phase5.py
 cd backend && python test_phase6.py
+cd backend && python test_phase10.py
 ```
 
 ## Test Summary
@@ -220,8 +225,10 @@ cd backend && python test_phase6.py
 | Phase | Tests | Description |
 |-------|-------|-------------|
 | 5 | 47 | Token auth, heartbeat/endpoint/route auth, config hash/rev, token rotation, revoke |
-| 6 | 51 | Star/mesh/hybrid topology, endpoint candidates, hash on endpoint change, topology persistence, stale cleanup |
+| 6 | 53 | Star/mesh/hybrid topology, endpoint candidates, hash on endpoint change, topology persistence, stale cleanup |
 | 8 | 60+ | Endpoint scoring, candidate ordering, probe results, preferred endpoint, reachability/latency, metrics |
+| 9 | 109 | UDP hole punching, NAT session management, candidate pairs, connectivity validation, daemon punch engine |
+| 10 | 62 | DERP-style relay fallback, relay session lifecycle, config-v2 relay candidates, NAT fallback integration |
 
 ## What's Implemented vs What's Next
 
@@ -309,6 +316,46 @@ cd backend && python test_phase6.py
 - [x] Probe result API (`POST /devices/{id}/probe-result`)
 - [x] Probe metrics (`midscale_endpoint_probe_total`, `midscale_endpoint_reachable_total`, `midscale_endpoint_score_updates_total`)
 - [x] Migration `c3cdac7f1f30` adds endpoint scoring fields
-- [ ] DERP relay for symmetric NAT
 - [ ] Multi-node control plane
 - [ ] Mobile support
+
+### Phase 9 — Complete (UDP Hole Punching & Direct Connectivity)
+- [x] NAT session model (`NATSession`) with lifecycle states (pending→coordinating→punching→connected/failed/expired)
+- [x] NAT coordination API (`POST /api/v1/nat/punch`, result, validate, get)
+- [x] Device token auth on all NAT endpoints
+- [x] Candidate pair generation (initiator↔target endpoint matrix)
+- [x] Connectivity validation with bidirectional check
+- [x] Preferred endpoint promotion on successful punch (score boost + preferred flag)
+- [x] Config.changed event emitted after successful direct path establishment
+- [x] NAT event types: `nat.punch_requested`, `nat.punch_started`, `nat.punch_succeeded`, `nat.punch_failed`, `nat.connectivity_validated`
+- [x] NAT metrics: `midscale_nat_punch_total`, `midscale_nat_connectivity_total`, `midscale_nat_session_active`, `midscale_nat_punch_duration_seconds`
+- [x] Stale session cleanup background task (every 120s, configurable timeout)
+- [x] Daemon hole punching engine (`hole_puncher.py`): simultaneous UDP sends, retry windows, candidate pair attempts
+- [x] Daemon WebSocket NAT event handling (nat.punch_requested → initiate punch, nat.punch_started → log)
+- [x] Daemon config: `hole_punch_enabled`, `hole_punch_timeout`, `hole_punch_retries`
+- [x] Relay/hub fallback preserved on punch failure
+- [x] Backward compatible — existing endpoints, config-v2, star/mesh/hybrid unchanged
+- [x] Phase 9 end-to-end tests: 109 tests covering session lifecycle, auth, scoring, metrics, fallback
+
+### Phase 10 — Complete (DERP-Style Relay Fallback)
+- [x] `RelaySession` model with lifecycle states (pending→active→expired/failed)
+- [x] Migration `ae1b2c3d4e5f` adds relay_sessions table
+- [x] Relay coordination service (`relay.py`): create, activate, expire, fail sessions, stats updates
+- [x] Minimal asyncio TCP relay server (`relay_server.py`) with transport abstraction
+- [x] Relay token auth (token generated via `secrets.token_urlsafe(32)`, validated on connect)
+- [x] Relay API endpoints (`POST /relay/sessions`, `/connect`, `/heartbeat`, `/stats`, `GET /candidates`, `GET /sessions/{id}`)
+- [x] Device token auth on all relay endpoints
+- [x] Relay candidates exposed in config-v2 (`relay_candidates[]`, `relay_required` per peer in `PeerInfo`)
+- [x] `RelayCandidateInfo` schema in config-v2 for mesh/hybrid topologies
+- [x] Auto-fallback to relay on repeated NAT punch failures (failure_count >= 2 triggers `auto_create_relay_fallback`)
+- [x] Relay event types: `relay.requested`, `relay.connected`, `relay.failed`, `relay.expired`, `relay.stats_updated`, `relay.fallback`
+- [x] Relay metrics: `midscale_relay_sessions_total`, `midscale_relay_connections_active`, `midscale_relay_fallback_total`, `midscale_relay_bytes_total`, `midscale_relay_session_duration_seconds`
+- [x] Relay server lifecycle in `main.py` (start/stop on lifespan) + stale session cleanup loop (configurable interval)
+- [x] Daemon relay client (`relay_client.py`): TCP reconnect, session connect/disconnect, heartbeat, stats reporting
+- [x] Daemon hole puncher integration: `on_relay_fallback` callback triggers relay session on punch failure
+- [x] Daemon WebSocket relay event handling (`relay.fallback` event)
+- [x] Daemon reconciler: `_activate_relay_for_peer` on config-v2 peers with `relay_required=True`
+- [x] Daemon config: `relay_enabled`, `relay_host`, `relay_port`, `relay_region`, `relay_reconnect_delay`
+- [x] Relay server health check exposed in `/health` endpoint
+- [x] Backward compatible — existing endpoints, config-v2, star/mesh/hybrid, NAT punching unchanged
+- [x] Phase 10 end-to-end tests: 62 tests covering session lifecycle, auth, stats, access control, config-v2 integration, fallback, metrics

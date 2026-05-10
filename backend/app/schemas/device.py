@@ -88,6 +88,14 @@ class EndpointCandidate(BaseModel):
     preferred: bool = False
 
 
+class RelayCandidateInfo(BaseModel):
+    relay_node: str
+    relay_region: str
+    relay_endpoint: str
+    priority: int = 100
+    preferred: bool = False
+
+
 class PeerInfo(BaseModel):
     public_key: str
     allowed_ips: list[str] = []
@@ -96,6 +104,8 @@ class PeerInfo(BaseModel):
     persistent_keepalive: Optional[int] = None
     endpoint_candidates: list[EndpointCandidate] = []
     relay_fallback: bool = False
+    relay_candidates: Optional[list[RelayCandidateInfo]] = None
+    relay_required: bool = False
 
 
 class DeviceConfigV2Response(BaseModel):

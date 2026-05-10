@@ -14,6 +14,7 @@ from daemon.models import (
     HeartbeatResult,
     ProbeReportResult,
     RegistrationResult,
+    RelaySessionResult,
     RouteAdvertiseResult,
 )
 
@@ -291,6 +292,184 @@ class MidscaleAPIClient:
             return RouteAdvertiseResult(success=False, error=detail)
         except httpx.RequestError as e:
             return RouteAdvertiseResult(success=False, error=str(e))
+
+    async def request_nat_punch(
+        self,
+        target_device_id: str,
+        initiator_endpoint: str,
+        initiator_port: int = 51820,
+        initiator_local_ip: Optional[str] = None,
+        initiator_public_ip: Optional[str] = None,
+    ) -> Optional[dict]:
+        if not self._device_id:
+            logger.error("cannot punch: not enrolled")
+            return None
+        body = {
+            "target_device_id": target_device_id,
+            "initiator_endpoint": initiator_endpoint,
+            "initiator_port": initiator_port,
+        }
+        if initiator_local_ip:
+            body["initiator_local_ip"] = initiator_local_ip
+        if initiator_public_ip:
+            body["initiator_public_ip"] = initiator_public_ip
+        try:
+            resp = await self._client.post(
+                f"{self._base_url}/api/v1/nat/punch",
+                json=body,
+                headers=self._auth_headers(),
+            )
+            if resp.status_code == 201:
+                return resp.json()
+            logger.warning("nat punch request failed", status=resp.status_code)
+            return None
+        except httpx.RequestError as e:
+            logger.error("nat punch request error", error=str(e))
+            return None
+
+    async def report_nat_punch_result(
+        self,
+        session_id: str,
+        success: bool,
+        selected_endpoint: Optional[str] = None,
+        selected_port: Optional[int] = None,
+        latency_ms: Optional[int] = None,
+        error: Optional[str] = None,
+    ) -> bool:
+        if not self._device_id:
+            return False
+        body = {
+            "session_id": session_id,
+            "success": success,
+        }
+        if selected_endpoint:
+            body["selected_endpoint"] = selected_endpoint
+        if selected_port:
+            body["selected_port"] = selected_port
+        if latency_ms is not None:
+            body["latency_ms"] = latency_ms
+        if error:
+            body["error"] = error
+        try:
+            resp = await self._client.post(
+                f"{self._base_url}/api/v1/nat/{session_id}/result",
+                json=body,
+                headers=self._auth_headers(),
+            )
+            return resp.status_code == 200
+        except httpx.RequestError as e:
+            logger.error("nat punch result report error", error=str(e))
+            return False
+
+    async def report_nat_connectivity_validation(
+        self,
+        session_id: str,
+        target_endpoint: str,
+        target_port: int,
+        reachable: bool,
+        latency_ms: Optional[int] = None,
+    ) -> Optional[dict]:
+        if not self._device_id:
+            return None
+        body = {
+            "session_id": session_id,
+            "target_endpoint": target_endpoint,
+            "target_port": target_port,
+            "reachable": reachable,
+        }
+        if latency_ms is not None:
+            body["latency_ms"] = latency_ms
+        try:
+            resp = await self._client.post(
+                f"{self._base_url}/api/v1/nat/{session_id}/validate",
+                json=body,
+                headers=self._auth_headers(),
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            return None
+        except httpx.RequestError as e:
+            logger.error("nat connectivity validation error", error=str(e))
+            return None
+
+    async def request_relay_session(
+        self,
+        target_device_id: str,
+        relay_region: str = "default",
+    ) -> RelaySessionResult:
+        if not self._device_id:
+            return RelaySessionResult(success=False, error="not enrolled")
+        body = {
+            "target_device_id": target_device_id,
+            "relay_region": relay_region,
+        }
+        try:
+            resp = await self._client.post(
+                f"{self._base_url}/api/v1/relay/sessions",
+                json=body,
+                headers=self._auth_headers(),
+            )
+            if resp.status_code == 201:
+                data = resp.json()
+                return RelaySessionResult(
+                    success=True,
+                    session_id=data.get("id"),
+                    relay_token=data.get("relay_token"),
+                    relay_region=data.get("relay_region"),
+                    relay_node=data.get("relay_node"),
+                )
+            detail = self._extract_error(resp)
+            return RelaySessionResult(success=False, error=detail)
+        except httpx.RequestError as e:
+            return RelaySessionResult(success=False, error=str(e))
+
+    async def connect_relay_session(
+        self, session_id: str
+    ) -> RelaySessionResult:
+        if not self._device_id:
+            return RelaySessionResult(success=False, error="not enrolled")
+        try:
+            resp = await self._client.post(
+                f"{self._base_url}/api/v1/relay/connect",
+                json={"session_id": session_id},
+                headers=self._auth_headers(),
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return RelaySessionResult(
+                    success=True,
+                    session_id=data.get("session_id"),
+                    relay_token=data.get("relay_token"),
+                    relay_region=data.get("relay_region"),
+                    relay_node=data.get("relay_node"),
+                )
+            detail = self._extract_error(resp)
+            return RelaySessionResult(success=False, error=detail)
+        except httpx.RequestError as e:
+            return RelaySessionResult(success=False, error=str(e))
+
+    async def request_relay_session_update(
+        self,
+        relay_session_id: str,
+        bytes_tx: int = 0,
+        bytes_rx: int = 0,
+    ) -> bool:
+        if not self._device_id:
+            return False
+        body = {
+            "session_id": relay_session_id,
+            "bytes_tx": bytes_tx,
+            "bytes_rx": bytes_rx,
+        }
+        try:
+            resp = await self._client.post(
+                f"{self._base_url}/api/v1/relay/{relay_session_id}/stats",
+                json=body,
+                headers=self._auth_headers(),
+            )
+            return resp.status_code == 200
+        except httpx.RequestError:
+            return False
 
     async def health_check(self) -> bool:
         try:

@@ -33,6 +33,19 @@ EVENT_ENDPOINT_STALE = "endpoint.stale"
 EVENT_ENDPOINT_PROBE = "endpoint.probe"
 EVENT_ROUTE_CHANGED = "route.changed"
 EVENT_ACL_CHANGED = "acl.changed"
+EVENT_NAT_PUNCH_REQUESTED = "nat.punch_requested"
+EVENT_NAT_PUNCH_STARTED = "nat.punch_started"
+EVENT_NAT_PUNCH_SUCCEEDED = "nat.punch_succeeded"
+EVENT_NAT_PUNCH_FAILED = "nat.punch_failed"
+EVENT_NAT_CONNECTIVITY_VALIDATED = "nat.connectivity_validated"
+
+# Relay event types
+EVENT_RELAY_REQUESTED = "relay.requested"
+EVENT_RELAY_CONNECTED = "relay.connected"
+EVENT_RELAY_FAILED = "relay.failed"
+EVENT_RELAY_EXPIRED = "relay.expired"
+EVENT_RELAY_STATS_UPDATED = "relay.stats_updated"
+EVENT_RELAY_FALLBACK = "relay.fallback"
 
 # Event channel prefix
 EVENT_CHANNEL_PREFIX = "midscale:event"

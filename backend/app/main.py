@@ -12,6 +12,8 @@ from app.api.v1 import auth, networks, devices, acls, dns, ws as ws_router
 from app.api.v1 import health as health_router
 from app.api.v1 import routes as routes_router
 from app.api.v1 import audit as audit_router
+from app.api.v1 import nat as nat_router
+from app.api.v1 import relay as relay_router
 
 from app.services.event_bus import EventBus
 from app.services.event_types import Event, CONFIG_CHANGED
@@ -27,7 +29,10 @@ from app.services.wg_controller import WireGuardController
 from app.services.ws_manager import WebSocketConnectionManager
 from app.services.health import HealthChecker
 from app.services.daemon import stale_endpoint_cleanup
+from app.services.nat import expire_stale_sessions
 from app.services.stun_server import StunServer
+from app.services.relay_server import RelayServer, set_relay_server, get_relay_server
+from app.services.relay import cleanup_expired_relays
 from app.core.middleware import RateLimitMiddleware
 
 setup_logging(debug=settings.debug)
@@ -36,6 +41,7 @@ _wg_controller: Optional[WireGuardController] = None
 _event_bus: Optional[EventBus] = None
 _ws_manager: Optional[WebSocketConnectionManager] = None
 _stun_server: Optional[StunServer] = None
+_relay_server_instance: Optional[RelayServer] = None
 _rate_limiter_default: Optional[RateLimiter] = None
 _rate_limiter_auth: Optional[RateLimiter] = None
 _rate_limiter_register: Optional[RateLimiter] = None
@@ -197,6 +203,15 @@ async def lifespan(app: FastAPI):
         _stun_server = StunServer(host=settings.stun_host, port=settings.stun_port)
         await _stun_server.start()
 
+    if settings.relay_enabled:
+        global _relay_server_instance
+        _relay_server_instance = RelayServer(
+            host=settings.relay_host,
+            port=settings.relay_port,
+        )
+        await _relay_server_instance.start()
+        set_relay_server(_relay_server_instance)
+
     async def _stale_endpoint_cleanup_loop():
         while True:
             try:
@@ -208,11 +223,46 @@ async def lifespan(app: FastAPI):
 
     stale_ep_task = asyncio.create_task(_stale_endpoint_cleanup_loop())
 
+    async def _relay_session_cleanup_loop():
+        while True:
+            try:
+                async with get_session_factory()() as session:
+                    await cleanup_expired_relays(session)
+                relay_server = get_relay_server()
+                if relay_server:
+                    relay_server.remove_expired_tokens()
+            except Exception:
+                pass
+            await asyncio.sleep(settings.relay_cleanup_interval_seconds)
+
+    relay_cleanup_task = asyncio.create_task(_relay_session_cleanup_loop())
+
+    async def _nat_session_cleanup_loop():
+        while True:
+            try:
+                async with get_session_factory()() as s:
+                    await expire_stale_sessions(s)
+            except Exception:
+                pass
+            await asyncio.sleep(120)
+
+    nat_cleanup_task = asyncio.create_task(_nat_session_cleanup_loop())
+
     metrics_task = asyncio.create_task(_update_metrics())
     yield
+    nat_cleanup_task.cancel()
+    try:
+        await nat_cleanup_task
+    except asyncio.CancelledError:
+        pass
     stale_ep_task.cancel()
     try:
         await stale_ep_task
+    except asyncio.CancelledError:
+        pass
+    relay_cleanup_task.cancel()
+    try:
+        await relay_cleanup_task
     except asyncio.CancelledError:
         pass
     metrics_task.cancel()
@@ -223,6 +273,9 @@ async def lifespan(app: FastAPI):
 
     if _stun_server:
         await _stun_server.stop()
+    if _relay_server_instance:
+        await _relay_server_instance.stop()
+        set_relay_server(None)
     if _wg_controller:
         await _wg_controller.stop()
     if _event_bus:
@@ -261,6 +314,8 @@ app.include_router(dns.router, prefix="/api/v1")
 app.include_router(ws_router.router, prefix="/api/v1")
 app.include_router(routes_router.router, prefix="/api/v1")
 app.include_router(audit_router.router, prefix="/api/v1")
+app.include_router(nat_router.router, prefix="/api/v1")
+app.include_router(relay_router.router, prefix="/api/v1")
 app.include_router(health_router.router)
 
 
@@ -282,6 +337,11 @@ async def health():
             "enabled": settings.stun_enabled,
             "running": stun is not None and stun._running if stun else False,
             "port": stun.port if stun else None,
+        },
+        "relay": {
+            "enabled": settings.relay_enabled,
+            "running": get_relay_server() is not None,
+            "port": settings.relay_port,
         },
     }
 

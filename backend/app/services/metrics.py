@@ -152,6 +152,59 @@ ENDPOINT_SCORE_UPDATES = Counter(
     "Total endpoint score recalculations",
 )
 
+# NAT hole punching metrics
+NAT_PUNCH_TOTAL = Counter(
+    "midscale_nat_punch_total",
+    "Total NAT hole punch attempts",
+    ["result"],
+)
+
+NAT_CONNECTIVITY_TOTAL = Counter(
+    "midscale_nat_connectivity_total",
+    "Total NAT connectivity validations",
+    ["result"],
+)
+
+NAT_SESSION_ACTIVE = Gauge(
+    "midscale_nat_session_active",
+    "Number of active NAT sessions",
+)
+
+NAT_PUNCH_DURATION = Histogram(
+    "midscale_nat_punch_duration_seconds",
+    "NAT hole punch duration",
+    buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0),
+)
+
+# Relay session metrics
+RELAY_SESSIONS_TOTAL = Counter(
+    "midscale_relay_sessions_total",
+    "Total relay sessions created",
+    ["state"],
+)
+
+RELAY_CONNECTIONS_ACTIVE = Gauge(
+    "midscale_relay_connections_active",
+    "Number of active relay connections",
+)
+
+RELAY_FALLBACK_TOTAL = Counter(
+    "midscale_relay_fallback_total",
+    "Total number of automatic relay fallbacks triggered",
+)
+
+RELAY_BYTES_TRANSFERRED = Counter(
+    "midscale_relay_bytes_total",
+    "Total bytes transferred through relay",
+    ["direction"],
+)
+
+RELAY_SESSION_DURATION = Histogram(
+    "midscale_relay_session_duration_seconds",
+    "Relay session duration",
+    buckets=(10, 60, 300, 600, 1800, 3600, 7200),
+)
+
 # Health metrics
 HEALTH_CHECK = Gauge(
     "midscale_health_check",

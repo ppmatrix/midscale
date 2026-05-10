@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     stun_port: int = 3478
     stun_host: str = "0.0.0.0"
 
+    relay_enabled: bool = True
+    relay_host: str = "0.0.0.0"
+    relay_port: int = 8765
+    relay_session_timeout_hours: int = 24
+    relay_cleanup_interval_seconds: int = 300
+
     rate_limit_enabled: bool = True
     rate_limit_default_max: int = 120
     rate_limit_default_window_seconds: int = 60

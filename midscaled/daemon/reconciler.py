@@ -6,6 +6,7 @@ from typing import Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from daemon.peer_prober import PeerProber
+    from daemon.relay_client import DaemonRelayClient
 
 import structlog
 
@@ -109,12 +110,16 @@ def _parse_config_v2(
 
         peers: list[DesiredPeer] = []
         for p in config_v2.get("peers", []):
+            relay_required = p.get("relay_required", False)
+            relay_candidates = p.get("relay_candidates") or []
             peer = DesiredPeer(
                 public_key=p.get("public_key", ""),
                 allowed_ips=p.get("allowed_ips", []),
                 endpoint=p.get("endpoint"),
                 endpoint_port=p.get("endpoint_port"),
                 persistent_keepalive=p.get("persistent_keepalive"),
+                relay_required=relay_required,
+                relay_candidates=relay_candidates,
             )
             peers.append(peer)
 
@@ -149,6 +154,7 @@ class Reconciler:
         wg_runtime: WireGuardRuntime,
         state_store: StateStore,
         peer_prober: Optional["PeerProber"] = None,
+        relay_client: Optional["DaemonRelayClient"] = None,
     ):
         self._config = config
         self._api = api_client
@@ -159,6 +165,7 @@ class Reconciler:
         self._last_config: Optional[str] = None
         self._push_event = asyncio.Event()
         self._peer_prober = peer_prober
+        self._relay_client = relay_client
 
     def trigger(self) -> None:
         """Signal the reconciler to run immediately (push event received)."""
@@ -290,6 +297,13 @@ class Reconciler:
         )
 
         await self._apply_config(interface, config, daemon_state)
+
+        if self._relay_client and self._relay_client.is_connected:
+            for peer in config.peers:
+                if peer.relay_required and peer.relay_candidates:
+                    asyncio.create_task(
+                        self._activate_relay_for_peer(peer)
+                    )
         self._state.update_cache("last_config_v2", cache_key)
         if result.hash:
             self._state.update_cache("last_config_hash", result.hash)
@@ -362,3 +376,45 @@ class Reconciler:
             except asyncio.TimeoutError:
                 pass
             self._push_event.clear()
+
+    async def _activate_relay_for_peer(self, peer: DesiredPeer) -> None:
+        """Activate a relay session for a peer that requires relay fallback."""
+        if not self._relay_client or not self._api.device_id:
+            return
+        try:
+            candidates = peer.relay_candidates or []
+            if not candidates:
+                return
+            target_pk = peer.public_key
+            target_device_id = await self._resolve_peer_device_id(target_pk)
+            if not target_device_id:
+                logger.warning(
+                    "cannot activate relay: unknown peer",
+                    public_key=target_pk,
+                )
+                return
+            result = await self._api.request_relay_session(
+                target_device_id=target_device_id,
+            )
+            if result.success and result.session_id and result.relay_token:
+                await self._relay_client.connect_session(
+                    session_id=result.session_id,
+                    token=result.relay_token,
+                )
+        except Exception as e:
+            logger.error("relay activation error", error=str(e))
+
+    async def _resolve_peer_device_id(self, public_key: str) -> Optional[str]:
+        """Resolve a peer device_id from the last pulled config."""
+        if not self._last_config:
+            return None
+        try:
+            if self._state.get_cache("last_config_v2"):
+                cached = self._state.get_cache("last_config_v2")
+                peers = json.loads(cached).get("peers", [])
+                for p in peers:
+                    if p.get("public_key") == public_key:
+                        return p.get("device_id")
+        except Exception:
+            pass
+        return None

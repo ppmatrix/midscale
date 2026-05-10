@@ -33,6 +33,8 @@ Midscale is a control plane for WireGuard that lets you manage mesh VPN networks
 - **Audit logging**: Structured event records for all mutations
 - **Metrics**: Prometheus (`midscale_` namespace), health checks, rate limiting
 - **Config v2**: Deterministic SHA-256 hashed JSON configs, idempotent reconciliation
+- **NAT traversal**: Coordinated UDP hole punching for direct peer-to-peer connectivity
+- **Relay fallback**: DERP-style TCP relay for devices behind symmetric NAT
 
 ## Quick Start
 
@@ -69,7 +71,7 @@ DATABASE_URL="postgresql+asyncpg://midscale:midscale@localhost:5432/midscale" \
 cd frontend && npm install && npm run dev
 
 # Tests (require backend running on localhost:8000)
-cd backend && python test_phase5.py && python test_phase6.py
+cd backend && python test_phase5.py && python test_phase6.py && python test_phase10.py
 ```
 
 ## API
@@ -87,6 +89,13 @@ cd backend && python test_phase5.py && python test_phase6.py
 | `POST /api/v1/devices/{id}/rotate-token` | Rotate device auth token |
 | `POST /api/v1/routes/devices/{id}/advertise` | Advertise subnet route |
 | `GET /api/v1/daemon/ws` | Daemon WebSocket (config push) |
+| `POST /api/v1/nat/punch` | Request NAT hole punch session (token auth) |
+| `POST /api/v1/nat/{session_id}/result` | Report punch result (token auth) |
+| `POST /api/v1/nat/{session_id}/validate` | Validate connectivity (token auth) |
+| `POST /api/v1/relay/sessions` | Create relay session for fallback (token auth) |
+| `POST /api/v1/relay/connect` | Connect to relay session (token auth) |
+| `GET /api/v1/relay/candidates` | Get relay candidates (token auth) |
+| `POST /api/v1/relay/{session_id}/stats` | Update relay transfer stats (token auth) |
 
 ## Topologies
 
@@ -127,4 +136,7 @@ Token rotation keeps the same prefix (it's a hint, not a secret).
 | 4 | ✅ | Production hardening — audit, metrics, health, rate limits, DNS, WebSocket |
 | 5 | ✅ | Secure daemon API — token auth, live config push via WebSocket |
 | 6 | ✅ | Mesh/hybrid topology, endpoint management, stale cleanup |
-| 7 | ⏳ | NAT traversal, multi-node, relay/DERP |
+| 7 | ✅ | STUN, endpoint scoring, peer probing |
+| 8 | ✅ | Endpoint scoring, candidate ordering, probe metrics |
+| 9 | ✅ | UDP hole punching, coordinated NAT traversal |
+| 10 | ✅ | DERP-style TCP relay fallback for symmetric NAT |

@@ -34,6 +34,7 @@ from app.services.network_state import (
 )
 from app.services.config_renderer import render_config, compute_config_hash
 from app.services.endpoint_scoring import compute_endpoint_score, select_best_endpoint, sort_endpoint_candidates
+from app.services.relay import get_best_relay_candidate
 from app.services.wg_adapter import WgCliAdapter, WgMockAdapter
 
 logger = structlog.get_logger(__name__)
@@ -326,7 +327,20 @@ async def build_config_v2(
                 if best_ep is None or is_preferred:
                     best_ep = ep_obj.endpoint
                     best_port = ep_obj.port
-                    relay_fallback = not ep_obj.reachable
+
+        if d_eps:
+            relay_fallback = False
+        else:
+            relay_fallback = bool(relay_fallback)
+        relay_required = relay_fallback and is_mesh_or_hybrid
+        relay_candidates: list[dict] = []
+        if relay_required:
+            try:
+                candidate = await get_best_relay_candidate(session, device.id)
+                if candidate:
+                    relay_candidates.append(candidate)
+            except Exception:
+                pass
 
         peer = PeerInfo(
             public_key=pp.public_key,
@@ -335,7 +349,9 @@ async def build_config_v2(
             endpoint_port=best_port or pp.endpoint_port,
             persistent_keepalive=pp.persistent_keepalive,
             endpoint_candidates=endpoint_candidates if is_mesh_or_hybrid else [],
-            relay_fallback=relay_fallback and is_mesh_or_hybrid,
+            relay_fallback=relay_required,
+            relay_candidates=relay_candidates if relay_candidates else None,
+            relay_required=relay_required,
         )
         peers.append(peer)
 

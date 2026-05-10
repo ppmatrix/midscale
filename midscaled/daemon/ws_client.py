@@ -19,11 +19,11 @@ _RECONNECT_MAX_DELAY = 60.0
 
 
 class DaemonWebSocketClient:
-    """WebSocket client for daemon live config push.
+    """WebSocket client for daemon live config push and NAT events.
 
     Connects to ``/api/v1/daemon/ws?token=<device_token>`` and listens
-    for ``config.changed`` events. When received, calls the registered
-    ``on_config_changed`` callback.
+    for ``config.changed`` events (triggers reconcile) and NAT events
+    (triggers hole punching).
 
     Automatically reconnects with exponential backoff on disconnect.
     """
@@ -34,11 +34,17 @@ class DaemonWebSocketClient:
         device_token: str,
         device_id: str,
         on_config_changed: Optional[Callable[[dict[str, Any]], None]] = None,
+        on_nat_punch_requested: Optional[Callable[[dict[str, Any]], None]] = None,
+        on_nat_punch_started: Optional[Callable[[dict[str, Any]], None]] = None,
+        on_relay_fallback: Optional[Callable[[dict[str, Any]], None]] = None,
     ):
         self._server_url = server_url.rstrip("/")
         self._device_token = device_token
         self._device_id = device_id
         self._on_config_changed = on_config_changed
+        self._on_nat_punch_requested = on_nat_punch_requested
+        self._on_nat_punch_started = on_nat_punch_started
+        self._on_relay_fallback = on_relay_fallback
         self._running = False
         self._task: Optional[asyncio.Task] = None
 
@@ -113,6 +119,17 @@ class DaemonWebSocketClient:
     def _poll_interval(self) -> int:
         return 15
 
+    def _on_message(self, data: dict) -> None:
+        msg_type = data.get("type", "")
+        if msg_type == "config.changed" and self._on_config_changed:
+            self._on_config_changed(data)
+        elif msg_type == "nat.punch_requested" and self._on_nat_punch_requested:
+            self._on_nat_punch_requested(data)
+        elif msg_type == "nat.punch_started" and self._on_nat_punch_started:
+            self._on_nat_punch_started(data)
+        elif msg_type == "relay.fallback" and self._on_relay_fallback:
+            self._on_relay_fallback(data)
+
     def _trigger_reconcile(self) -> None:
         if self._on_config_changed:
             self._on_config_changed({"type": "config.changed", "source": "poll"})
@@ -122,6 +139,7 @@ class WebSocketClient:
     """Minimal WebSocket client using websockets library if available.
 
     Falls back gracefully to polling if websockets is not installed.
+    Handles config.changed, nat.punch_requested, and nat.punch_started events.
     """
 
     def __init__(
