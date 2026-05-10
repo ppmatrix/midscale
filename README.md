@@ -108,6 +108,10 @@ cd backend && python test_phase5.py && python test_phase6.py && python test_phas
 Set per-network: `PUT /api/v1/networks/{id}` with `{"topology": "mesh"}`.
 Set globally: `WIREGUARD_TOPOLOGY=mesh` in `.env`.
 
+## Usage Guide
+
+See [docs/user-guide.md](docs/user-guide.md) for installation, enrollment, topology selection, NAT traversal, relay fallback, monitoring, and troubleshooting instructions.
+
 ## Device Token Auth
 
 Daemon endpoints use structured device tokens for auth:
@@ -122,7 +126,7 @@ Token rotation keeps the same prefix (it's a hint, not a secret).
 ## Tech Stack
 
 - **Backend**: Python 3.12+, FastAPI, SQLAlchemy 2.0 (async), PostgreSQL 16, Alembic, Pydantic v2
-- **Daemon**: Python (midscaled CLI)
+- **Daemon**: Python 3.12+ daemon CLI
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS 3
 - **Infra**: Docker Compose, CoreDNS, Prometheus, Redis
 
@@ -136,7 +140,7 @@ Token rotation keeps the same prefix (it's a hint, not a secret).
 | 4 | ✅ | Production hardening — audit, metrics, health, rate limits, DNS, WebSocket |
 | 5 | ✅ | Secure daemon API — token auth, live config push via WebSocket |
 | 6 | ✅ | Mesh/hybrid topology, endpoint management, stale cleanup |
-| 7 | ✅ | STUN, endpoint scoring, peer probing |
-| 8 | ✅ | Endpoint scoring, candidate ordering, probe metrics |
+| 7 | ✅ | STUN (RFC 5389) server + client, endpoint discovery |
+| 8 | ✅ | Endpoint probing, scoring, preferred candidate selection |
 | 9 | ✅ | UDP hole punching, coordinated NAT traversal |
 | 10 | ✅ | DERP-style TCP relay fallback for symmetric NAT |

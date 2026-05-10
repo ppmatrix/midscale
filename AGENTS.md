@@ -53,9 +53,9 @@ midscale/
 │   │       ├── ipam.py            # allocate_ip (first-available from CIDR), release_ip
 │   │       ├── wireguard.py       # generate_keypair, generate_device_config, build_config_v2, compute_config_hash, get_active_endpoints, sync_wireguard_interface
 │   │       ├── topology.py        # StarTopologyGenerator, MeshTopologyGenerator, HybridTopologyGenerator, TopologyType
-│   │   ├── daemon.py          # process_heartbeat, report_endpoint, stale_endpoint_cleanup
-│   │   ├── stun_server.py     # RFC 5389 STUN server (UDP binding response)
-│   │   ├── endpoint_scoring.py # compute_endpoint_score, select_best_endpoint, sort_endpoint_candidates
+│   │       ├── daemon.py          # process_heartbeat, report_endpoint, stale_endpoint_cleanup
+│   │       ├── stun_server.py     # RFC 5389 STUN server (UDP binding response)
+│   │       ├── endpoint_scoring.py # compute_endpoint_score, select_best_endpoint, sort_endpoint_candidates
 │   │       ├── acl.py             # check_device_access (tag-based matching)
 │   │       ├── event_bus.py       # Redis pub/sub + in-memory fallback EventBus
 │   │       ├── event_types.py     # Event dataclass, CONFIG_CHANGED, channel helpers

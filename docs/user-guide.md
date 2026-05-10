@@ -563,20 +563,37 @@ An exit node is a device that forwards all internet traffic from other
 VPN clients. This routes the client's traffic through the exit node's
 network connection.
 
-### Configure an exit node
+### A. Making a device act as an exit node
 
-Set the device as an exit node:
+Advertise `0.0.0.0/0` with `is_exit_node=true`:
 
 ```bash
-curl -s -X PUT "http://localhost:8000/api/v1/devices/$DEVICE_ID" \
-  -H "Authorization: Bearer $TOKEN" \
+curl -s -X POST "http://localhost:8000/api/v1/routes/devices/$DEVICE_ID/advertise" \
+  -H "Authorization: Bearer $DEVICE_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"exit_node_id": null}'  # not an exit node
+  -d '{"prefix": "0.0.0.0/0", "is_exit_node": true}'
 ```
 
-The exit node advertises `0.0.0.0/0` (or `::/0`) as a route.
+Optionally also advertise `::/0` if IPv6 is supported:
 
-### Use an exit node from another device
+```bash
+curl -s -X POST "http://localhost:8000/api/v1/routes/devices/$DEVICE_ID/advertise" \
+  -H "Authorization: Bearer $DEVICE_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"prefix": "::/0", "is_exit_node": true}'
+```
+
+An administrator must then approve the route:
+
+```bash
+curl -s -X PUT "http://localhost:8000/api/v1/routes/$ROUTE_ID/approve" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### B. Selecting an exit node from another device
+
+Once an exit node is approved, any device can use it by setting
+`exit_node_id` to the exit node's device ID:
 
 ```bash
 curl -s -X PUT "http://localhost:8000/api/v1/devices/$CLIENT_DEVICE_ID" \
@@ -587,6 +604,17 @@ curl -s -X PUT "http://localhost:8000/api/v1/devices/$CLIENT_DEVICE_ID" \
 
 The client's config-v2 will include the exit node's public key and
 `0.0.0.0/0, ::/0` in the allowed IPs of the exit node peer.
+
+### C. Disabling exit node use
+
+To stop using an exit node, set `exit_node_id` to `null` on the client:
+
+```bash
+curl -s -X PUT "http://localhost:8000/api/v1/devices/$CLIENT_DEVICE_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"exit_node_id": null}'
+```
 
 ---
 
@@ -808,7 +836,9 @@ Advantages:
 - **No private key in transit**: Node-owned devices keep their key
   entirely local
 - **Deterministic hash**: SHA-256 hash of the config content for
-  idempotent application
+  idempotent application. The `generated_at` timestamp is metadata
+  and not included in hash input. Secrets (private keys, device
+  tokens) are never included in config-v2 or its hash input
 - **Revision tracking**: Monotonic timestamp-based revision number
 - **Endpoint candidates**: Structured list of candidate endpoints with
   scores, reachability, and latency
@@ -950,6 +980,9 @@ docker compose exec backend alembic upgrade head
   expiration for headless enrollment.
 - **Device tokens are bearer tokens**. Treat them like passwords.
   Rotate tokens periodically via the API or by re-enrolling.
+- **Device tokens are returned only once** — at enrollment or
+  rotation. The backend stores only the bcrypt hash and token prefix.
+  Raw tokens cannot be recovered from the backend.
 - **Node-owned devices keep private keys local**. The server never sees
   the private key. Server-owned devices have keys encrypted at rest
   with Fernet.
